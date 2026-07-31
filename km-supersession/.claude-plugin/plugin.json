@@ -1,0 +1,7 @@
+{
+  "name": "km-supersession",
+  "description": "Enforces the ADR status:superseded convention applied to patterns under docs/patterns/: any staged pattern entry that declares itself superseding or superseded by another entry must be reciprocally paired — the counterpart entry must also be staged and must declare the matching field back, so a supersession relationship is never recorded from only one side. This plugin is member 3 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-pattern-entry (pattern-language authoring) and km-cross-index (cross-issue indexing) — the three are jointly necessary and no single one is sufficient on its own. Role: knowledge-management.",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}

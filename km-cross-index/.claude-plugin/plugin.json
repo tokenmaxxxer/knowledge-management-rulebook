@@ -1,0 +1,5 @@
+{
+  "name": "km-cross-index",
+  "description": "Enforces the PMI keyword-searchability methodology for the cross-issue pattern index at docs/patterns/index.md, requiring every indexed entry to be discoverable by keyword and status rather than by memory of where it was written; this plugin is member 2 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-pattern-entry and km-supersession, under the knowledge-management role.",
+  "author": { "name": "Jung Jiwon & Lee Jongkwan" }
+}
