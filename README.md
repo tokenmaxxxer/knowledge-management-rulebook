@@ -20,12 +20,10 @@ claude plugin install knowledge-management
 ## Layout
 
 - `knowledge-management/.claude-plugin/plugin.json` — plugin manifest
-- `knowledge-management/hooks/hooks.json` — SessionStart + PreToolUse wiring
-- `knowledge-management/hooks/directive.sh` — SessionStart role directive
-- `knowledge-management/hooks/record-fields-gate.sh` — this role's record required-field gate
-- `knowledge-management/hooks/trailer-gate.sh` — commit `Subject: issue-<n>` trailer gate
-- `knowledge-management/hooks/handbook-trigger-gate.sh` — s21 handbook-sync gate
-- `knowledge-management/agents/warrant-hunter.md` — rotating-stance hunt agent
+- `knowledge-management/hooks/hooks.json` — SessionStart wiring (role-agnostic gates now fire from core's own `hooks.json`)
+- `knowledge-management/hooks/directive.sh` — SessionStart role directive stub (sources `core/hooks/lib/role-directive.sh`)
+- `docs/handbooks/knowledge-management.md` — this role's write_scope and boundary-case doctrine
+- core `warrant` plugin — rotating-stance hunt agent (installed alongside this rulebook, per core issue #63)
 - `docs/specs/approvers.md` — Approve-authority allowlist (see below)
 
 This is scaffolding, not a finished rulebook: fill in doctrine detail,
