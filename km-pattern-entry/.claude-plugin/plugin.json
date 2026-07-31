@@ -1,0 +1,7 @@
+{
+  "name": "km-pattern-entry",
+  "description": "Enforces the pattern-entry authoring methodology under docs/patterns/: every pattern-language entry must carry Christopher Alexander-style pattern-language front matter (title/keywords/source_issues) and a NASA-AAR-derived 'why' narrative arc (Context, Problem, Why, Solution, Consequences, in that order) so a lesson is captured as a reusable, causally-explained pattern rather than a bare note. This plugin is member 1 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-cross-index (cross-issue indexing) and km-supersession (reciprocal supersession linking) — the three are jointly necessary and no single one is sufficient on its own. Role: knowledge-management.",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}

@@ -8,6 +8,26 @@
       "name": "knowledge-management",
       "source": "./knowledge-management",
       "description": "The knowledge-management role on contract v3 (issue-160 round-4 promotion). Decides: 개별 이슈의 교훈이 조직 차원에서 재사용 가능한 형태로 축적·색인되는가."
+    },
+    {
+      "name": "km-adr-proposal",
+      "source": "./km-adr-proposal",
+      "description": "Owns the ADR-shape methodology for phase-1 knowledge-management proposals — requiring every docs/issue-*/proposals/knowledge-management/*.md to carry Context, at least two reasoned Options considered, a Decision, Consequences (naming something easier and something harder), and Sources. It is the sole plugin composing the knowledge-management role's phase-1 norm; the role is knowledge-management."
+    },
+    {
+      "name": "km-pattern-entry",
+      "source": "./km-pattern-entry",
+      "description": "Enforces the pattern-entry authoring methodology under docs/patterns/: every pattern-language entry must carry Christopher Alexander-style pattern-language front matter (title/keywords/source_issues) and a NASA-AAR-derived 'why' narrative arc (Context, Problem, Why, Solution, Consequences, in that order). Member 1 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-cross-index and km-supersession — the three are jointly necessary and no single one is sufficient on its own."
+    },
+    {
+      "name": "km-cross-index",
+      "source": "./km-cross-index",
+      "description": "Enforces the PMI keyword-searchability methodology for the cross-issue pattern index at docs/patterns/index.md, plus a same-commit pairing gate requiring a new pattern entry to be indexed in the same commit it lands. Member 2 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-pattern-entry and km-supersession."
+    },
+    {
+      "name": "km-supersession",
+      "source": "./km-supersession",
+      "description": "Enforces the ADR status:superseded convention applied to patterns under docs/patterns/: any staged pattern entry declaring it supersedes or is superseded by another entry must be reciprocally paired in the same commit. Member 3 of 3 composing the knowledge-management role's phase-2 norm, jointly with km-pattern-entry and km-cross-index — the three are jointly necessary and no single one is sufficient on its own."
     }
   ]
 }

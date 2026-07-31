@@ -1,0 +1,7 @@
+{
+  "name": "km-adr-proposal",
+  "description": "Owns the ADR-shape methodology for phase-1 knowledge-management proposals — requiring every docs/issue-*/proposals/knowledge-management/*.md to carry Context, at least two reasoned Options considered, a Decision, Consequences (naming something easier and something harder), and Sources. It is the sole plugin composing the knowledge-management role's phase-1 norm; the role is knowledge-management.",
+  "author": {
+    "name": "Jung Jiwon & Lee Jongkwan"
+  }
+}
