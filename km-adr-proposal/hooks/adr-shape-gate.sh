@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
-set -uo pipefail
-
 # km-adr-proposal :: adr-shape-gate.sh
 #
 # Enforces the ADR-shape norm on phase-1 knowledge-management proposals:
 # every docs/issue-<n>/proposals/knowledge-management/*.md write/edit must
-# resolve to text carrying Context, >=2 reasoned Options considered,
-# a Decision, Consequences (naming something easier and something harder),
-# and Sources. Structurally modeled on the pricing-rulebook methodology-gate
-# pattern (fail-closed trap, kill switch, has_any substring helper, additive
-# missing-element reporting) — no script text is copied from that repo.
+# resolve to text carrying, as actual heading lines in strict adjacent
+# order: Context -> Options considered (>=2 distinct options, scoped to
+# that section) -> Decision -> Consequences (naming something easier and
+# something harder, scoped to that section) -> Sources.
+#
+# Migrated onto the gate-house standard (issue-72's core/hooks/lib/
+# gate-lib.sh + gate-lib.py) per docs/issue-10's phase-1 proposal: trap/
+# kill-switch/JSON-parse/path-normalize/Write-Edit-MultiEdit-NotebookEdit
+# reconstruction are all delegated to the shared library instead of being
+# hand-rolled here.
 
-# --- kill switch ------------------------------------------------------
-case "${KM_ADR_PROPOSAL_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
-
-deny() {
-  echo "knowledge-management: refused — $1" >&2
-  exit 2
-}
+. "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
+set -uo pipefail
+gate_kill_switch_active "${KM_ADR_PROPOSAL_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 # --- dependency check ---------------------------------------------------
-command -v python3 >/dev/null 2>&1 || deny "python3 is required for the ADR-shape gate but was not found on PATH"
+command -v python3 >/dev/null 2>&1 || gate_deny "knowledge-management" "python3 is required for the ADR-shape gate but was not found on PATH"
 
 # --- read PreToolUse payload ---------------------------------------------
 PAYLOAD="$(cat)"
@@ -35,64 +30,45 @@ PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$PROJECT_ROOT" ]; then
   PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 fi
-[ -n "$PROJECT_ROOT" ] || deny "could not resolve project root (CLAUDE_PROJECT_DIR is unset and git rev-parse --show-toplevel failed)"
+[ -n "$PROJECT_ROOT" ] || gate_deny "knowledge-management" "could not resolve project root (CLAUDE_PROJECT_DIR is unset and git rev-parse --show-toplevel failed)"
 
-# --- reconstruct resulting text via python3 (JSON parsing + Edit/MultiEdit
-#     replay against the file currently on disk). Payload is passed through
-#     an env var (base64) rather than stdin, since the python source itself
-#     is fed to python3 via heredoc-stdin. ---------------------------------
+# Payload is passed through an env var (base64) rather than stdin, since
+# the python source itself is fed to python3 via heredoc-stdin (stdin
+# cannot carry both the script and its input at once).
 PAYLOAD_B64="$(printf '%s' "$PAYLOAD" | base64 | tr -d '\n')"
 
 RECON_OUT="$(KM_ADR_PAYLOAD_B64="$PAYLOAD_B64" KM_ADR_PROJECT_ROOT="$PROJECT_ROOT" python3 <<'PYEOF'
 import base64
-import json
+import importlib.util
 import os
 import re
 import sys
 
-payload_b64 = os.environ.get("KM_ADR_PAYLOAD_B64", "")
-project_root = os.environ.get("KM_ADR_PROJECT_ROOT", "")
+_spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+gate_lib = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gate_lib)
+
+
+def deny(msg):
+    print("DENY " + msg)
+    sys.exit(0)
+
 
 try:
-    raw = base64.b64decode(payload_b64).decode("utf-8")
-    payload = json.loads(raw)
+    raw = base64.b64decode(os.environ.get("KM_ADR_PAYLOAD_B64", "")).decode("utf-8")
 except Exception:
-    print("DENY malformed PreToolUse JSON on stdin")
-    sys.exit(0)
+    raw = ""
+payload = gate_lib.gate_parse_json_or_deny(raw, deny)
 
-if not isinstance(payload, dict):
-    print("DENY malformed PreToolUse JSON on stdin")
-    sys.exit(0)
+project_root = os.environ.get("KM_ADR_PROJECT_ROOT", "")
 
 tool_name = payload.get("tool_name", "")
 tool_input = payload.get("tool_input") or {}
-file_path = tool_input.get("file_path", "")
-
-if not file_path:
-    print("SKIP")
-    sys.exit(0)
-
-abs_root = os.path.abspath(project_root)
-abs_path = file_path if os.path.isabs(file_path) else os.path.join(abs_root, file_path)
-abs_path = os.path.abspath(abs_path)
-
-try:
-    rel_path = os.path.relpath(abs_path, abs_root)
-except Exception:
-    print("SKIP")
-    sys.exit(0)
-
-if rel_path.startswith(".."):
-    print("SKIP")
-    sys.exit(0)
 
 TARGET_RE = re.compile(r"^docs/issue-[0-9]+/proposals/knowledge-management/.*\.md$")
-if not TARGET_RE.match(rel_path.replace(os.sep, "/")):
-    print("SKIP")
-    sys.exit(0)
 
 
-def read_current():
+def read_current(abs_path):
     try:
         with open(abs_path, "r", encoding="utf-8") as f:
             return f.read()
@@ -100,61 +76,58 @@ def read_current():
         return None
 
 
-if tool_name == "Write":
-    if "content" not in tool_input:
-        print("DENY Write payload missing content")
-        sys.exit(0)
-    result = tool_input["content"]
+def check_target(rel):
+    if rel is None:
+        return None
+    return rel if TARGET_RE.match(rel) else None
 
-elif tool_name == "Edit":
-    old = tool_input.get("old_string")
-    new = tool_input.get("new_string")
-    if old is None or new is None:
-        print("DENY Edit payload missing old_string/new_string")
-        sys.exit(0)
-    current = read_current()
-    if current is None:
-        print("DENY could not read current file content on disk to apply Edit")
-        sys.exit(0)
-    if old == "":
-        result = current
-    elif old not in current:
-        print("DENY Edit old_string does not match the current file content on disk")
-        sys.exit(0)
-    else:
-        replace_all = bool(tool_input.get("replace_all", False))
-        result = current.replace(old, new) if replace_all else current.replace(old, new, 1)
 
-elif tool_name == "MultiEdit":
-    edits = tool_input.get("edits")
-    if not isinstance(edits, list) or not edits:
-        print("DENY MultiEdit payload missing edits")
+if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+    file_path = tool_input.get("file_path", "")
+    if not file_path:
+        print("SKIP")
         sys.exit(0)
-    current = read_current()
-    if current is None:
-        print("DENY could not read current file content on disk to apply MultiEdit")
+
+    rel = gate_lib.gate_normalize_path(project_root, file_path)
+    target = check_target(rel)
+    if target is None:
+        print("SKIP")
         sys.exit(0)
-    result = current
-    for e in edits:
-        old = (e or {}).get("old_string")
-        new = (e or {}).get("new_string")
-        if old is None or new is None:
-            print("DENY MultiEdit edit entry missing old_string/new_string")
-            sys.exit(0)
-        if old == "":
-            continue
-        if old not in result:
-            print("DENY MultiEdit old_string does not match content at the point it is applied")
-            sys.exit(0)
-        replace_all = bool((e or {}).get("replace_all", False))
-        result = result.replace(old, new) if replace_all else result.replace(old, new, 1)
+
+    abs_path = os.path.join(project_root, target)
+    current = read_current(abs_path)
+
+    new_text, ok = gate_lib.gate_reconstruct_write(tool_name, tool_input, current)
+    if not ok:
+        deny("could not reconstruct the resulting content for this write "
+             "(missing content, old_string not found in current file, or "
+             "unsupported NotebookEdit edit_mode) — refusing rather than "
+             "guessing")
+
+    print("OK")
+    print(new_text)
+    sys.exit(0)
+
+elif tool_name == "Bash":
+    command = tool_input.get("command", "")
+    targets = gate_lib.__dict__  # no-op reference to keep import used
+    matched = False
+    for token in re.findall(r"[\w./~$-]+", command):
+        rel = gate_lib.gate_normalize_path(project_root, token)
+        if check_target(rel) is not None:
+            matched = True
+            break
+    if matched:
+        deny("a Bash command appears to write to a docs/issue-<n>/proposals/"
+             "knowledge-management/*.md target; this gate cannot reconstruct "
+             "the resulting content for a Bash-tool write, so it fails "
+             "closed rather than letting an un-vetted ADR write through")
+    print("SKIP")
+    sys.exit(0)
 
 else:
     print("SKIP")
     sys.exit(0)
-
-print("OK")
-print(result)
 PYEOF
 )"
 
@@ -165,75 +138,130 @@ case "$STATUS_LINE" in
     exit 0
     ;;
   DENY*)
-    deny "${STATUS_LINE#DENY }"
+    gate_deny "knowledge-management" "${STATUS_LINE#DENY }"
     ;;
   OK)
     ;;
   *)
-    deny "internal error: unexpected gate reconciliation status"
+    gate_deny "knowledge-management" "internal error: unexpected gate reconciliation status"
     ;;
 esac
 
 TEXT="$(printf '%s\n' "$RECON_OUT" | tail -n +2)"
-LOWER_TEXT="$(printf '%s' "$TEXT" | tr '[:upper:]' '[:lower:]')"
+TEXT_B64="$(printf '%s' "$TEXT" | base64 | tr -d '\n')"
 
-# has_any(needle...): case-insensitive substring search against the
-# resulting text, structurally matching the pricing-rulebook pattern.
-has_any() {
-  local needle
-  for needle in "$@"; do
-    case "$LOWER_TEXT" in
-      *"$needle"*) return 0 ;;
-    esac
-  done
-  return 1
-}
+# --- semantic shape check (structural, not substring) --------------------
+SHAPE_OUT="$(KM_ADR_TEXT_B64="$TEXT_B64" python3 <<'PYEOF'
+import base64
+import os
+import re
+import sys
 
-MISSING=()
+text = base64.b64decode(os.environ.get("KM_ADR_TEXT_B64", "")).decode("utf-8")
+lines = text.split("\n")
 
-# Context
-has_any "## context" $'context\n' || MISSING+=("Context")
+HEADING_RE = re.compile(r"^#{1,6}\s+.*$")
 
-# Options considered — heading plus >=2 distinct reasoned options.
-# Heuristic: count lines starting with a bolded option marker ("**A." /
-# "**B.") or an "### Option" heading. This will under-count option lists
-# that use other markers (e.g. plain numbered lists, "Option A:" without
-# bold/heading), so it is deliberately additive-only (never a false pass
-# on prose that merely repeats the word "options").
-OPTION_HEADING_OK=0
-has_any "## options considered" $'options considered\n' && OPTION_HEADING_OK=1
+# All heading lines, in order: (line_index, text)
+headings = [(i, l) for i, l in enumerate(lines) if HEADING_RE.match(l)]
 
-OPTION_COUNT="$(printf '%s\n' "$TEXT" | grep -Ec '^\*\*[A-Za-z][.)]|^###[[:space:]]+[Oo]ption' 2>/dev/null || true)"
-OPTION_COUNT="${OPTION_COUNT:-0}"
 
-if [ "$OPTION_HEADING_OK" -ne 1 ] || [ "$OPTION_COUNT" -lt 2 ]; then
-  MISSING+=("Options considered (heading plus at least 2 distinct reasoned options — see heuristic note in this script's comments)")
-fi
+def find_heading(word_re):
+    for i, l in headings:
+        if word_re.search(l):
+            return i
+    return None
 
-# Decision
-has_any "## decision" "decision &" || MISSING+=("Decision")
+SEQUENCE = [
+    ("Context", re.compile(r"\bcontext\b", re.IGNORECASE)),
+    ("Options considered", re.compile(r"\boptions considered\b", re.IGNORECASE)),
+    ("Decision", re.compile(r"\bdecision\b", re.IGNORECASE)),
+    ("Consequences", re.compile(r"\bconsequences\b", re.IGNORECASE)),
+    ("Sources", re.compile(r"\bsources\b", re.IGNORECASE)),
+]
 
-# Consequences — heading plus something easier and something harder.
-CONSEQUENCES_HEADING_OK=0
-has_any "## consequences" $'consequences\n' && CONSEQUENCES_HEADING_OK=1
+missing = []
+indices = {}
+for name, word_re in SEQUENCE:
+    idx = find_heading(word_re)
+    if idx is None:
+        missing.append(name)
+    else:
+        indices[name] = idx
 
-if [ "$CONSEQUENCES_HEADING_OK" -ne 1 ] || ! has_any "easier"; then
-  EASIER_HARDER_MISSING=1
-fi
-if ! has_any "harder"; then
-  EASIER_HARDER_MISSING=1
-fi
+if missing:
+    print("DENY ADR-shape proposal is missing required heading(s): " + "; ".join(missing))
+    sys.exit(0)
 
-if [ "$CONSEQUENCES_HEADING_OK" -ne 1 ] || [ "${EASIER_HARDER_MISSING:-0}" = "1" ]; then
-  MISSING+=("Consequences (heading naming both something easier and something harder)")
-fi
+# Order: strictly increasing.
+ordered_names = [n for n, _ in SEQUENCE]
+ordered_idx = [indices[n] for n in ordered_names]
+for a, b in zip(ordered_idx, ordered_idx[1:]):
+    if not (a < b):
+        print("DENY ADR-shape proposal's required headings are not in the "
+              "mandated order (Context -> Options considered -> Decision -> "
+              "Consequences -> Sources)")
+        sys.exit(0)
 
-# Sources
-has_any "## sources" $'sources\n' || MISSING+=("Sources")
+# Adjacency: no other heading line strictly between two consecutive
+# mandated headings.
+heading_line_indices = [i for i, _ in headings]
+for a, b in zip(ordered_idx, ordered_idx[1:]):
+    between = [i for i in heading_line_indices if a < i < b]
+    if between:
+        print("DENY ADR-shape proposal has an unrelated heading between two "
+              "mandated headings; the sequence Context -> Options considered "
+              "-> Decision -> Consequences -> Sources must be adjacent with "
+              "no other heading in between")
+        sys.exit(0)
 
-if [ "${#MISSING[@]}" -gt 0 ]; then
-  JOINED="$(printf '%s; ' "${MISSING[@]}")"
-  deny "ADR-shape proposal is missing required elements: ${JOINED%; }"
-fi
 
-exit 0
+def next_heading_after(idx):
+    for i, _ in headings:
+        if i > idx:
+            return i
+    return len(lines)
+
+
+# Options considered: >=2 distinct options, scoped to its own section.
+opt_start = indices["Options considered"]
+opt_end = next_heading_after(opt_start)
+opt_lines = lines[opt_start + 1:opt_end]
+option_count = 0
+for l in opt_lines:
+    if re.match(r"^\*\*[A-Za-z][.)]", l) or re.match(r"^#{1,6}\s+[Oo]ption\b", l):
+        option_count += 1
+
+if option_count < 2:
+    print("DENY ADR-shape proposal's Options considered section names fewer "
+          "than 2 distinct reasoned options (heuristic: bolded 'A.'/'B.' "
+          "markers or '### Option' headings, scoped to that section only)")
+    sys.exit(0)
+
+# Consequences: must name something easier and something harder, scoped to
+# its own section.
+cons_start = indices["Consequences"]
+cons_end = next_heading_after(cons_start)
+cons_text = "\n".join(lines[cons_start + 1:cons_end]).lower()
+
+if "easier" not in cons_text or "harder" not in cons_text:
+    print("DENY ADR-shape proposal's Consequences section does not name "
+          "both something easier and something harder (scoped to that "
+          "section only)")
+    sys.exit(0)
+
+print("OK")
+PYEOF
+)"
+
+case "$SHAPE_OUT" in
+  OK)
+    exit 0
+    ;;
+  DENY*)
+    gate_deny "knowledge-management" "${SHAPE_OUT#DENY }"
+    ;;
+  *)
+    gate_deny "knowledge-management" "internal error: unexpected shape-check status"
+    ;;
+esac

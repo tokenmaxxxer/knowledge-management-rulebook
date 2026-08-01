@@ -59,6 +59,64 @@ print(json.dumps({
 ' "$path" "$content"
 }
 
+json_edit_payload() {
+  # args: path old_string new_string replace_all(true/false)
+  python3 -c '
+import json, sys
+path, old, new, replace_all = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+print(json.dumps({
+    "tool_name": "Edit",
+    "tool_input": {
+        "file_path": path,
+        "old_string": old,
+        "new_string": new,
+        "replace_all": replace_all == "true",
+    }
+}))
+' "$1" "$2" "$3" "$4"
+}
+
+json_multiedit_payload() {
+  # args: path edits_json(list of {old_string,new_string,replace_all})
+  python3 -c '
+import json, sys
+path, edits_json = sys.argv[1], sys.argv[2]
+edits = json.loads(edits_json)
+print(json.dumps({
+    "tool_name": "MultiEdit",
+    "tool_input": {"file_path": path, "edits": edits}
+}))
+' "$1" "$2"
+}
+
+json_notebookedit_payload() {
+  # args: path new_source edit_mode
+  python3 -c '
+import json, sys
+path, new_source, edit_mode = sys.argv[1], sys.argv[2], sys.argv[3]
+print(json.dumps({
+    "tool_name": "NotebookEdit",
+    "tool_input": {"notebook_path": path, "new_source": new_source, "edit_mode": edit_mode}
+}))
+' "$1" "$2" "$3"
+}
+
+json_bash_payload() {
+  # args: command
+  python3 -c '
+import json, sys
+print(json.dumps({"tool_name": "Bash", "tool_input": {"command": sys.argv[1]}}))
+' "$1"
+}
+
+write_fixture() {
+  # args: relpath content
+  local rel="$1"
+  local content="$2"
+  mkdir -p "$CLAUDE_PROJECT_DIR/$(dirname "$rel")"
+  printf '%s' "$content" > "$CLAUDE_PROJECT_DIR/$rel"
+}
+
 # Case 1: PASS full pattern entry
 run_case "PASS: full pattern entry with front matter and ordered headings" 0 \
   "$(json_write_payload docs/patterns/some-pattern.md "$FULL_CONTENT")"
@@ -87,6 +145,105 @@ run_case "PASS: kill switch KM_PATTERN_ENTRY_GATE_OFF=1 bypasses gate" 0 \
 # Case 6: FAIL malformed JSON (fail-closed)
 run_case "FAIL: malformed JSON on stdin fails closed" 2 \
   "{not valid json"
+
+# ---- Group 1: Edit replace_all:true applies to ALL occurrences ----
+# Body has a harmless earlier occurrence of PLACEHOLDER, and the required
+# "Problem" heading is ALSO spelled PLACEHOLDER. Only when replace_all is
+# honored do BOTH occurrences get replaced, turning "## PLACEHOLDER" into
+# "## Problem" and making the doc pass. Under the old bug (always
+# first-occurrence-only) only the harmless body occurrence would be
+# replaced and the heading would stay wrong, so this must PASS.
+write_fixture "docs/patterns/replace-all-edit.md" \
+  $'---\ntitle: T\nkeywords: k\nsource_issues: [7]\n---\n\n## Context\nThis is PLACEHOLDER prose, harmless.\n\n## PLACEHOLDER\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+run_case "PASS: Edit replace_all:true replaces ALL occurrences of old_string" 0 \
+  "$(json_edit_payload docs/patterns/replace-all-edit.md PLACEHOLDER Problem true)"
+
+# ---- Group 2: MultiEdit mixing replace_all true/false, each independent ----
+# edit1 (replace_all:true) touches an unrelated placeholder harmlessly.
+# edit2 (replace_all:false) must touch ONLY the first "CCC" occurrence (in
+# body prose, before the heading), leaving the "## CCC" heading untouched
+# -> required "Consequences" heading stays missing -> gate must FAIL.
+write_fixture "docs/patterns/multiedit-mixed.md" \
+  $'---\ntitle: T\nkeywords: k\nsource_issues: [7]\n---\n\n## Context\nAAA prose AAA and CCC mention here.\n\n## Problem\nBBB text\n\n## Why\ntext\n\n## Solution\ntext\n\n## CCC\ntext\n'
+run_case "FAIL: MultiEdit honors each edit's own replace_all independently" 2 \
+  "$(json_multiedit_payload docs/patterns/multiedit-mixed.md '[{"old_string":"AAA","new_string":"ok","replace_all":true},{"old_string":"CCC","new_string":"Solved","replace_all":false}]')"
+
+# ---- Group 3: malformed JSON variants all fail closed ----
+run_case "FAIL: truncated JSON on stdin fails closed" 2 \
+  '{"tool_name": "Write", "tool_input": {"file_path": "docs/patterns/x.md", "content": "abc"'
+
+run_case "FAIL: top-level JSON array fails closed" 2 \
+  '["not", "an", "object"]'
+
+run_case "FAIL: top-level JSON string fails closed" 2 \
+  '"just a string"'
+
+run_case "FAIL: empty stdin fails closed" 2 \
+  ""
+
+# ---- Group 4: kill switch garbage value stays ACTIVE ----
+run_case "FAIL: kill switch set to unrecognized value 'banana' stays active" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$MISSING_KEYWORDS")" \
+  "KM_PATTERN_ENTRY_GATE_OFF=banana"
+
+# ---- Group 5: absolute path and "./"-prefixed path normalize the same as relative ----
+run_case "PASS: absolute file_path normalizes same as relative (passing doc)" 0 \
+  "$(json_write_payload "$CLAUDE_PROJECT_DIR/docs/patterns/abs-test.md" "$FULL_CONTENT")"
+
+run_case "FAIL: absolute file_path normalizes same as relative (failing doc)" 2 \
+  "$(json_write_payload "$CLAUDE_PROJECT_DIR/docs/patterns/abs-test2.md" "$MISSING_KEYWORDS")"
+
+run_case "PASS: './'-prefixed relative file_path normalizes same as plain relative" 0 \
+  "$(json_write_payload "./docs/patterns/dot-test.md" "$FULL_CONTENT")"
+
+# ---- Group 6: Bash tool_input.command writing to a target path ----
+# Deliberately NOT covered: this gate's checks (front-matter key presence,
+# heading presence/order/adjacency) need the full resulting text of the
+# file. gate_bash_write_targets only yields candidate path-shaped tokens
+# from the command string, not the content a shell redirect/heredoc/sed -i
+# would leave behind, so there is no reliable way to reconstruct "resulting
+# text" for a Bash write the way there is for Write/Edit/MultiEdit/
+# NotebookEdit. A Bash write to docs/patterns/*.md therefore falls through
+# unintercepted (not_our_business) rather than being falsely allowed via a
+# content guess or falsely denied via a syntactic heuristic. This test
+# documents that deliberate scope boundary.
+run_case "PASS (documented gap): Bash write to docs/patterns/*.md is not intercepted by this gate" 0 \
+  "$(json_bash_payload "printf 'bad' > docs/patterns/via-bash.md")"
+
+# ---- NotebookEdit support via gate_reconstruct_write ----
+write_fixture "docs/patterns/notebook-fixture.md" "irrelevant prior content"
+run_case "PASS: NotebookEdit reconstructs new_source and evaluates it" 0 \
+  "$(json_notebookedit_payload docs/patterns/notebook-fixture.md "$FULL_CONTENT" replace)"
+
+run_case "FAIL: NotebookEdit with insert mode missing required elements" 2 \
+  "$(json_notebookedit_payload docs/patterns/notebook-fixture2.md "$MISSING_KEYWORDS" insert)"
+
+# ---- Semantic upgrade fixture (a): required key's word only appears as a
+# quoted VALUE on a DIFFERENT key; must NOT satisfy the "keywords:" key
+# requirement (previously a has_any substring check would falsely pass).
+SEMANTIC_A=$'---\ntitle: Some Pattern\nsource_issues: "see keywords: below"\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+run_case "FAIL: required front-matter key only appears as a quoted value on another key" 2 \
+  "$(json_write_payload docs/patterns/semantic-a.md "$SEMANTIC_A")"
+
+# ---- Semantic upgrade fixture (b): required heading word only appears in
+# prose body, never on an actual "#"-heading line; must NOT satisfy the
+# heading requirement (previously a bare substring-in-stripped-line check
+# would falsely pass).
+SEMANTIC_B=$'---\ntitle: Some Pattern\nkeywords: [a]\nsource_issues: [7]\n---\n\n## Context\nThis section discusses the Problem informally, without a dedicated heading.\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+run_case "FAIL: required heading word only appears in prose, never as a heading line" 2 \
+  "$(json_write_payload docs/patterns/semantic-b.md "$SEMANTIC_B")"
+
+# ---- Semantic upgrade fixture (c): correctly structured document must PASS.
+run_case "PASS: correctly structured pattern entry (semantic fixture c)" 0 \
+  "$(json_write_payload docs/patterns/semantic-c.md "$FULL_CONTENT")"
+
+# ---- Semantic upgrade fixture (d): an unrelated heading sits between two
+# mandated headings that are otherwise still in increasing order; the
+# adjacency requirement must reject this (strict ordering alone would let
+# it through).
+SEMANTIC_D=$'---\ntitle: Some Pattern\nkeywords: [a]\nsource_issues: [7]\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Unrelated Aside\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+run_case "FAIL: unrelated heading between two mandated headings violates adjacency" 2 \
+  "$(json_write_payload docs/patterns/semantic-d.md "$SEMANTIC_D")"
 
 echo "----"
 echo "SUMMARY: $pass_count passed, $fail_count failed"

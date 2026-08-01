@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
+. "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
 
 set -uo pipefail
 
 # Kill switch
-case "${KM_SUPERSESSION_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
+gate_kill_switch_active "${KM_SUPERSESSION_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 deny() {
-  echo "knowledge-management: refused — $1" >&2
-  exit 2
+  gate_deny "supersession-pairing-gate" "$1"
 }
 
 command -v python3 >/dev/null 2>&1 || deny "python3 is required for this gate but was not found"
@@ -20,36 +16,61 @@ command -v git >/dev/null 2>&1 || deny "git is required for this gate but was no
 
 payload="$(cat)"
 
-# Extract tool_name and tool_input.command via python3 (stdlib json only)
-tool_name="$(printf '%s' "$payload" | python3 -c '
-import json,sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print("")
+# Single python invocation: parse JSON via gate_lib.gate_parse_json_or_deny
+# (fails closed on empty/truncated/non-object payloads), then emit
+# tool_name and tool_input.command as two lines. The git+commit detection
+# also happens here, newline-tolerant (embedded \n in the command string is
+# collapsed to a space before matching \bgit\b...\bcommit\b), fixing the
+# audit-named defect where `grep -Eq '\bgit\b[^\n]*\bcommit\b'` only matched
+# within a single line.
+parsed="$(printf '%s' "$payload" | GATE_LIB_PY="$GATE_LIB_PY" python3 -c '
+import importlib.util, os, re, sys
+
+_spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+gate_lib = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gate_lib)
+
+def _deny(msg):
+    print("__DENY__" + msg)
     sys.exit(0)
-print(data.get("tool_name", ""))
-')"
+
+raw = sys.stdin.read()
+event = gate_lib.gate_parse_json_or_deny(raw, _deny)
+
+tool_name = event.get("tool_name", "")
+command_str = (event.get("tool_input", {}) or {}).get("command", "")
+if not isinstance(command_str, str):
+    command_str = ""
+
+normalized = re.sub(r"\s+", " ", command_str)
+is_git_commit = bool(re.search(r"\bgit\b.*\bcommit\b", normalized))
+is_empty_command = command_str == ""
+
+# Emit only flags, never the raw (possibly multiline) command string
+# itself, so the bash side never has to split output on newlines that
+# might themselves be embedded in the command text.
+print(tool_name)
+print("0" if is_empty_command else "1")
+print("1" if is_git_commit else "0")
+')" || deny "could not parse PreToolUse JSON payload"
+
+case "$parsed" in
+  __DENY__*) deny "${parsed#__DENY__}" ;;
+esac
+
+tool_name="$(printf '%s\n' "$parsed" | sed -n '1p')"
+has_command="$(printf '%s\n' "$parsed" | sed -n '2p')"
+is_git_commit="$(printf '%s\n' "$parsed" | sed -n '3p')"
 
 if [ "$tool_name" != "Bash" ]; then
   exit 0
 fi
 
-command_str="$(printf '%s' "$payload" | python3 -c '
-import json,sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print("")
-    sys.exit(0)
-print(data.get("tool_input", {}).get("command", ""))
-')"
-
-if [ -z "$command_str" ]; then
+if [ "$has_command" != "1" ]; then
   exit 0
 fi
 
-if ! printf '%s' "$command_str" | grep -Eq '\bgit\b[^\n]*\bcommit\b'; then
+if [ "$is_git_commit" != "1" ]; then
   exit 0
 fi
 
@@ -89,7 +110,7 @@ for line in lines:
         else:
             break
     if in_fm:
-        m = re.match(r'^${field}:\s*(\S+)', line)
+        m = re.match(r'^${field}:\s*(.+?)\s*$', line)
         if m:
             print(m.group(1))
             break
@@ -103,7 +124,18 @@ is_staged() {
 
 missing=""
 
-for entry in $pattern_entries; do
+# Build a real bash array of pattern-entry paths, split only on newlines
+# (never mid-line whitespace), fixing the audit-named defect where
+# `for entry in $pattern_entries` (unquoted) word-split a path containing a
+# space — e.g. "docs/patterns/my entry.md" — into multiple bogus entries.
+pattern_entries_arr=()
+if [ -n "$pattern_entries" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && pattern_entries_arr+=("$line")
+  done <<< "$pattern_entries"
+fi
+
+for entry in "${pattern_entries_arr[@]}"; do
   git -C "$proj_root" show ":$entry" >/dev/null 2>&1 || deny "git show failed for staged file $entry — cannot read staged content"
 
   supersedes_val="$(get_field "$entry" supersedes)"
@@ -152,4 +184,4 @@ if [ -n "$missing" ]; then
 $(printf '%b' "$missing")"
 fi
 
-exit 0
+gate_allow
