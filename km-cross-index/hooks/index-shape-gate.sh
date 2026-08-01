@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
-__fc(){ rc=$?; if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then echo "fail-closed: gate aborted (rc=$rc)" >&2; exit 2; fi; }
-trap __fc EXIT
+. "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
+gate_trap_fail_closed
 set -uo pipefail
 
 # Shared kill switch for the km-cross-index plugin.
-case "${KM_CROSS_INDEX_GATE_OFF:-}" in
-  ""|0|false|no|off) ;;
-  *) exit 0 ;;
-esac
+gate_kill_switch_active "${KM_CROSS_INDEX_GATE_OFF:-}" || { trap - EXIT; exit 0; }
 
 deny() {
-  echo "knowledge-management: refused — $1" >&2
-  exit 2
+  gate_deny "index-shape-gate" "$1"
 }
 
 command -v python3 >/dev/null 2>&1 || deny "python3 is required to evaluate the index shape gate"
@@ -28,107 +24,79 @@ fi
 
 pyscript="$(mktemp "${TMPDIR:-/tmp}/km-cross-index-shape.XXXXXX.py")"
 cat > "$pyscript" <<'PYEOF'
-import json
+import importlib.util
 import os
+import re
 import sys
+
+_spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_PY"])
+gate_lib = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gate_lib)
 
 root = sys.argv[1]
 
-try:
-    payload = json.load(sys.stdin)
-except Exception:
-    print("DENY: malformed PreToolUse JSON payload")
+
+def _deny(msg):
+    print("DENY: " + msg)
     sys.exit(0)
+
+
+raw = sys.stdin.read()
+payload = gate_lib.gate_parse_json_or_deny(raw, _deny)
 
 tool_name = payload.get("tool_name", "")
 tool_input = payload.get("tool_input", {}) or {}
 
-if tool_name not in ("Write", "Edit", "MultiEdit"):
+if tool_name == "Bash":
+    command = tool_input.get("command", "") or ""
+    # gate_bash_write_targets is a bash function (gate-lib.sh), not
+    # exposed to gate-lib.py; mirror its token-scan regex here.
+    targets = re.findall(r"[[:alnum:]_./~$-]+".replace("[:alnum:]", "A-Za-z0-9"), command)
+    hit = False
+    for tok in targets:
+        rel = gate_lib.gate_normalize_path(root, tok)
+        if rel == "docs/patterns/index.md":
+            hit = True
+            break
+    if not hit:
+        print("OK")
+        sys.exit(0)
+    # A Bash command touching the target path cannot be reliably
+    # reconstructed into resulting file content (shell redirection/append
+    # semantics are not general-purpose parseable here), so fail closed
+    # rather than silently let a shape-breaking write through.
+    _deny("Bash command appears to write docs/patterns/index.md; this gate "
+          "cannot verify table shape for shell-driven writes, refusing")
+
+if tool_name not in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
     print("OK")
     sys.exit(0)
 
 file_path = tool_input.get("file_path", "")
 if not file_path:
-    print("DENY: tool_input.file_path missing")
-    sys.exit(0)
+    _deny("tool_input.file_path missing")
 
-if not os.path.isabs(file_path):
-    file_path = os.path.join(root, file_path)
-file_path = os.path.normpath(file_path)
-
-target = os.path.normpath(os.path.join(root, "docs/patterns/index.md"))
-
-if file_path != target:
+rel = gate_lib.gate_normalize_path(root, file_path)
+if rel != "docs/patterns/index.md":
     print("OK")
     sys.exit(0)
 
+target = os.path.join(root, "docs/patterns/index.md")
+
 # Reconstruct resulting text.
-existing = ""
+existing = None
 if os.path.exists(target):
     try:
         with open(target, "r", encoding="utf-8") as f:
             existing = f.read()
     except Exception:
-        print("DENY: could not read existing docs/patterns/index.md to reconstruct result")
-        sys.exit(0)
-
-if tool_name == "Write":
-    new_text = tool_input.get("content", None)
-    if new_text is None:
-        print("DENY: Write tool_input.content missing")
-        sys.exit(0)
-elif tool_name == "Edit":
-    old_string = tool_input.get("old_string", None)
-    new_string = tool_input.get("new_string", None)
-    if old_string is None or new_string is None:
-        print("DENY: Edit tool_input missing old_string/new_string")
-        sys.exit(0)
-    if old_string == "":
-        new_text = new_string
-    else:
-        replace_all = bool(tool_input.get("replace_all", False))
-        count = existing.count(old_string)
-        if count == 0:
-            print("DENY: Edit old_string not found in current docs/patterns/index.md; result undeterminable")
-            sys.exit(0)
-        if replace_all:
-            new_text = existing.replace(old_string, new_string)
-        else:
-            if count > 1:
-                print("DENY: Edit old_string is ambiguous in docs/patterns/index.md; result undeterminable")
-                sys.exit(0)
-            new_text = existing.replace(old_string, new_string, 1)
-elif tool_name == "MultiEdit":
-    edits = tool_input.get("edits", None)
-    if not isinstance(edits, list) or not edits:
-        print("DENY: MultiEdit tool_input.edits missing or empty")
-        sys.exit(0)
-    text = existing
-    for edit in edits:
-        old_string = edit.get("old_string", None)
-        new_string = edit.get("new_string", None)
-        if old_string is None or new_string is None:
-            print("DENY: MultiEdit edit missing old_string/new_string; result undeterminable")
-            sys.exit(0)
-        if old_string == "":
-            text = new_string
-            continue
-        replace_all = bool(edit.get("replace_all", False))
-        count = text.count(old_string)
-        if count == 0:
-            print("DENY: MultiEdit old_string not found against running content; result undeterminable")
-            sys.exit(0)
-        if replace_all:
-            text = text.replace(old_string, new_string)
-        else:
-            if count > 1:
-                print("DENY: MultiEdit old_string is ambiguous against running content; result undeterminable")
-                sys.exit(0)
-            text = text.replace(old_string, new_string, 1)
-    new_text = text
+        _deny("could not read existing docs/patterns/index.md to reconstruct result")
 else:
-    print("OK")
-    sys.exit(0)
+    existing = ""
+
+new_text, ok = gate_lib.gate_reconstruct_write(tool_name, tool_input, existing)
+if not ok:
+    _deny("could not reconstruct the resulting docs/patterns/index.md content; refusing")
 
 lines = new_text.splitlines()
 
@@ -138,35 +106,32 @@ for i in range(len(lines) - 1):
     sep = lines[i + 1]
     if not (header.startswith("|") and header.endswith("|")):
         continue
-    import re
     if not re.match(r"^\|[-\s|:]+\|$", sep):
         continue
     header_idx = i
     break
 
 if header_idx is None:
-    print("DENY: docs/patterns/index.md must contain a markdown table with a header row followed by a separator row")
-    sys.exit(0)
+    _deny("docs/patterns/index.md must contain a markdown table with a header row followed by a separator row")
 
-header_text = lines[header_idx].lower()
+header_cells = [c.strip().lower() for c in lines[header_idx].strip("|").split("|")]
 missing = []
-if "keyword" not in header_text:
+if not any(c in ("keyword", "keywords") for c in header_cells):
     missing.append("keyword")
-if "status" not in header_text:
+if not any(c == "status" for c in header_cells):
     missing.append("status")
 
 if missing:
-    print("DENY: docs/patterns/index.md table header is missing required column(s): " + ", ".join(missing))
-    sys.exit(0)
+    _deny("docs/patterns/index.md table header is missing required column(s): " + ", ".join(missing))
 
 print("OK")
 PYEOF
 
-result="$(printf '%s' "$payload" | python3 "$pyscript" "$root")"
+result="$(printf '%s' "$payload" | GATE_LIB_PY="$GATE_LIB_PY" python3 "$pyscript" "$root")"
 rm -f "$pyscript"
 
 case "$result" in
-  OK) exit 0 ;;
+  OK) gate_allow ;;
   DENY:*) deny "${result#DENY: }" ;;
   *) deny "index shape gate produced an unexpected result" ;;
 esac
