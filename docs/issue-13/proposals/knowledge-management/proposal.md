@@ -9,257 +9,286 @@ loop_state: proposed
 ## Context
 
 Built on `docs/issue-13/reports/knowledge-management/survey.md` and
-`scout-brief.md`. The 2026-08-01 re-audit (issue #13) named residual
-defects left in `km-adr-proposal` after `docs/issue-10`'s gate-house-
-standard adoption: `hooks.json` advertises and tests a `Bash` branch in
-`adr-shape-gate.sh` that is unreachable in production (matcher omits
-`Bash`), that branch hand-rolls a token scan instead of calling core
-issue #75's `gate_bash_write_targets`, a dangling `(see below)`
-reference in the top-level README, a general require that hooks.json
-matcher/code coverage stay aligned, a missing-core test case with a
-green suite and recorded compliance-check pass, and zero old-role-name/
-ghost-file references in README/manifest. Core issue #75 (confirmed
-landed at `tokenmaxxxer/tokenmaxxxer-core` commit `52bdc15`, PR #77 —
-see survey.md's prerequisite section for the correction of an earlier
-wrong-repo-slug lookup in this same session) has since landed the
-mandatory `||`-guarded source convention, `compliance-check.sh`'s
-same-line detection rule, a missing-core test case pattern, and
-`gate_bash_write_targets` ported to `gate-lib.py`. On-the-record issue
-#182 (closed) separately fixed `spawn.py`'s `CLAUDE_PLUGIN_ROOT_CORE`
-injection. This proposal is this repo's per-repo remediation against
-those two landed references, plus the repo-local defects (matcher/
-branch reachability, dangling reference) core does not itself cover.
-This is a **phase-1 proposal only** — no code changes are made in this
-PR; every fix below is described at file/line precision so phase-2 can
-apply it mechanically once approved.
+`scout-brief.md`. The 2026-08-01 re-audit (issue #13) graded this
+repo's gates B+ and named six residual defects on top of issue #10's
+already-merged gate-house-standard adoption: (1) `km-adr-proposal`'s
+`hooks.json` Bash matcher is not registered, making the gate's own
+`elif tool_name == "Bash":` branch dead code in production despite
+being advertised and tested; (2) that same branch hand-rolls a
+path-token scan instead of calling `gate_lib`'s
+`gate_bash_write_targets`; (3) a dangling `(see below)` reference in
+the top-level `README.md`; (4) a general requirement that every
+`hooks.json` matcher and its script's code coverage be fully aligned;
+(5) a missing-core test case plus a green full suite and a recorded
+`compliance-check` pass; (6) zero leftover old-role-name or
+ghost/nonexistent-file references in README/manifests.
+
+The survey additionally found, while verifying items 4 and 6, that
+`adr-shape-gate.sh`'s `NotebookEdit` branch is equally unreachable
+(same defect class as item 1, not separately named in the issue), and
+that `knowledge-management/hooks/hooks.json` carries a `PreToolUse`
+`Bash` entry pointing at `knowledge-management-progress-gate.sh`, a
+file that does not exist anywhere in this checkout — a ghost-file
+reference the issue's item 6 language covers even though it lives in a
+`hooks.json` rather than the README or a `plugin.json`.
+
+Core #75 (gate-lib source-guard mandate, compliance-check detection of
+an unguarded source line, mandatory missing-core test,
+`gate_bash_write_targets` Python port) is confirmed landed: commit
+`52bdc15` ("gate-lib source guard + gate_bash_write_targets py parity
+(issue-75) (#77)") on `tokenmaxxxer/tokenmaxxxer-core`'s `main` (the
+survey's first pass queried the wrong repo slug and two stale local
+caches pinned at issue #72's close; both are corrected in
+survey.md/scout-brief.md, cross-checked against a sibling role's own
+issue-13 survey naming the same commit/PR). This proposal applies that
+landed pattern directly rather than inventing a variant of it.
 
 ## Options considered
 
-**A. Reference-apply core #75's confirmed guard shape verbatim, add
-`Bash` (and `NotebookEdit`, per survey.md's additional finding) to
-`km-adr-proposal/hooks/hooks.json`'s matcher so the already-implemented,
-already-tested branches become reachable, delegate the hand-rolled
-token scan to `gate_lib.gate_bash_write_targets`, and fix the dangling
-README reference and the `knowledge-management/hooks/hooks.json`
-ghost-file entry as small, targeted text edits.** Every piece traces to
-either an already-landed, re-verified core reference (the `||` guard,
-the missing-core test shape, `gate_bash_write_targets`) or a narrowly
-scoped repo-local text/config fix. No new abstraction, no new
-dependency, no rewrite of working logic.
+**A. Fix `km-adr-proposal` in place: extend its existing
+`hooks.json` matcher, delegate its Bash-branch token scan to the
+landed `gate_lib.gate_bash_write_targets` (Python, core #75), add the
+landed same-line `||`-guard plus its landed missing-core test pattern,
+and fix the README/manifest fixes as targeted diffs, scoped strictly
+to the issue's named items plus the two adjacent findings
+(NotebookEdit matcher gap, the role-directive plugin's ghost-file
+reference).** No architectural change; every fix is a same-shape
+extension of a pattern already correct elsewhere in this repo
+(`km-supersession`/`km-cross-index`'s Bash-matcher registration) or
+already landed verbatim in core (#75's guard/test/Python-port).
 
-**B. Remove the Bash (and NotebookEdit) branches from
-`adr-shape-gate.sh` and their test cases instead of registering them in
-`hooks.json`.** Also closes the matcher/code-coverage misalignment, and
-is strictly less code than option A. Rejected: issue item 2 ("Bash 분기
-수제 토큰 스캔 → gate_bash_write_targets 사용") presupposes the Bash
-branch continues to exist and simply needs its token-scan
-implementation swapped — deleting it would make item 2 moot rather than
-resolved, and would silently drop Bash/NotebookEdit-tool coverage for a
-`docs/issue-<n>/proposals/knowledge-management/*.md` write path the
-shape gate exists to protect (an ADR proposal can, in principle, be
-written by a Bash command like `cat > file.md <<EOF`, exactly the
-coverage test group 6 already defends). Registering the branches, not
-deleting them, is the conservative choice that keeps existing
-protection instead of narrowing it.
+**B. Roll the fix into a repo-wide sweep now — also fix
+`km-cross-index/hooks/index-shape-gate.sh`'s identical dead-Bash-branch
+defect (found during scouting, item 4's general form) and add the
+same-line `||`-guard to all five gate scripts' `gate-lib.sh` source
+line (found during the item-5 check) in this same phase-2, since they
+are the same defect classes on sibling files.** Closes more of the
+repo's actual gate risk in one pass and avoids re-opening the same
+investigation later. But issue #13's precondition section names only
+`adr-shape-gate`, and its acceptance criteria are all `km-adr-proposal`
+-scoped; folding in un-requested fixes to four other plugins expands
+this issue's phase-2 diff surface and review burden beyond what was
+asked, and risks conflating two audits' findings if the human reviewer
+is grading strictly against issue #13's stated scope.
 
-**C. Migrate all five `km-*`/role-directive scripts found to share the
-unguarded source-line pattern, or the same dead-Bash-branch pattern on
-`km-cross-index/hooks/index-shape-gate.sh` (both noted in survey.md as
-repo-wide, not `km-adr-proposal`-only), in this same PR.** Rejected as
-over-scope for this proposal: issue #13's own precondition section
-names only `adr-shape-gate`, and folding unscoped, only-partially-
-verified work into a phase-1 proposal whose acceptance criteria are all
-`km-adr-proposal`-scoped would make review and "done" ambiguous.
-Recorded as a follow-up candidate instead (see Consequences).
+**C. Wait for explicit re-confirmation that core #75 has landed before
+proposing anything, since items 2 and 5 are phrased as "use the
+landed core #75 pattern" and the survey's first pass could not
+confirm it.** Maximally conservative about the precondition-
+verification gap the survey initially hit. But the gap was a
+wrong-repo-slug/stale-cache artifact, not an actual landing gap — a
+fresh clone of the correctly named core repo confirms all three #75
+pieces exist at commit `52bdc15`, cross-checked by a sibling role's
+own issue-13 documents. Re-blocking phase-1 on a precondition that is
+now directly confirmed would stall a fix for a live defect (item 1's
+dead Bash branch is a real coverage gap right now) for no remaining
+verification benefit.
 
 ## Decision
 
-Option A. It resolves all six items the issue names, using the landed
-core #75/#182 references verbatim wherever they apply (item 2, and the
-guard-line defect survey.md found while verifying item 5) and precise
-repo-local text edits where they do not (items 1, 3, 4, 6), without
-deleting existing protective coverage (rejects B) and without absorbing
-unscoped, unverified repo-wide work into this issue's acceptance
-criteria (rejects C).
+Option A. It fixes every one of the six named items plus the two
+adjacent findings discovered while verifying them, applying core #75's
+now-confirmed landed pattern verbatim (the same-line `||` guard, the
+`gate_lib.py` `gate_bash_write_targets`, the missing-core test shape)
+rather than inventing a substitute, and it does not expand scope into
+the other four plugins' matching-but-unrequested defects (option B) —
+those are recorded in survey.md/scout-brief.md as a follow-up
+candidate instead. It does not re-block on the precondition (option C
+rejected) because the corrected verification already confirms core
+#75 landed.
 
 ## Consequences
 
-**Easier**: `km-adr-proposal`'s Bash/NotebookEdit-tool coverage becomes
-real instead of advertised-but-dead — a future re-audit against this
-gate will find the matcher and the tested code paths in agreement,
-closing exactly the defect class issue #13 exists to fix. Delegating to
-`gate_lib.gate_bash_write_targets` means any future core-side fix to
-the token-scan character class reaches this gate automatically via
-re-sourcing, the same benefit `docs/issue-10`'s proposal already
-established as the point of the gate-house standard.
+**Easier**: `km-adr-proposal`'s Bash-write and NotebookEdit protections
+become real in production instead of advertised-only, closing the
+exact gap a re-audit would otherwise keep finding every cycle; the
+Bash-branch token scan collapses from a hand-maintained regex to one
+call into `gate_lib.gate_bash_write_targets` (core #75's landed Python
+port), so a future fix to that function reaches this gate
+automatically without a repeat migration; a reviewer checking item 6
+has one less ghost path to chase, in either the README or
+`knowledge-management/hooks/hooks.json`; `compliance-check.sh`'s
+landed same-line-guard rule gives a mechanical pass/fail for item 5
+instead of a manual re-audit.
 
-**Harder**: this proposal's scope boundary (option A vs. C) means the
-same unguarded-source-line pattern confirmed present across the other
-four gate scripts, and the same dead-Bash-branch pattern confirmed on
-`km-cross-index/hooks/index-shape-gate.sh`, are *not* fixed by this PR
-— a second remediation pass, plus a full audit of those gates' own
-matcher/code alignment and test coverage (not independently verified in
-this survey beyond the specific greps noted), is still owed and must be
-tracked as its own follow-up rather than assumed closed once this issue
-lands. Survey.md also found no mechanical `compliance-check.sh` rule
-that would have caught the matcher/`tool_name`-branch misalignment in
-the first place (scout-brief.md Stage 3) — until core grows that check,
-this class of defect must keep being caught by manual/test-level
-inspection, which is a standing maintenance cost this fix does not
-remove.
+**Harder**: because no `compliance-check.sh` rule (landed or otherwise,
+confirmed by reading the corrected fresh-clone copy) cross-checks
+`hooks.json` matcher strings against script `tool_name` branches, the
+item-1/item-4 defect class itself is not mechanically preventable
+today; the fix instead relies on a human-authored test case plus
+manual review to keep matcher and code coverage aligned, and the same
+defect could recur in `km-pattern-entry` or a future gate unless a
+compliance-check rule for this specific class is proposed as separate
+follow-up work (not in scope here, since issue #13 does not ask for a
+compliance-check rule change, only a per-plugin fix and a recorded
+pass).
 
 ## Sources
 
-`core/hooks/lib/gate-lib.sh`, `core/hooks/lib/gate-lib.py`,
-`core/hooks/tests/compliance-check.sh`,
-`core/hooks/tests/run-gate-lib-tests.sh` (read from a fresh
-`git clone --depth 1 https://github.com/tokenmaxxxer/tokenmaxxxer-core.git`
-at commit `52bdc15`, PR #77, closing core issue #75); `gh issue view
-13` (this repo); `gh issue view 75 -R tokenmaxxxer/tokenmaxxxer-core`;
-`gh issue view 182 -R tokenmaxxxer/on-the-record`; this repo's own
-`km-adr-proposal/hooks/hooks.json`,
-`km-adr-proposal/hooks/adr-shape-gate.sh`,
-`km-adr-proposal/hooks/tests/adr-shape-gate.test.sh`,
-`km-adr-proposal/README.md`, `knowledge-management/hooks/hooks.json`,
-`km-cross-index/hooks/hooks.json`,
-`km-cross-index/hooks/index-shape-gate.sh`, top-level `README.md`; full
-trace detail in `docs/issue-13/reports/knowledge-management/survey.md`
-and `scout-brief.md`; cross-checked against
-`/home/jwjung/.tokenmaxxxer/work/api-design-rulebook-issue-13-api-design/docs/issue-13/reports/api-design/current-state.md`
-(sibling role, same issue number, independent confirmation of core
-#75's landed commit and on-the-record #182's state).
+- `gh issue view 13` (this repo).
+- `docs/issue-13/reports/knowledge-management/survey.md`,
+  `docs/issue-13/reports/knowledge-management/scout-brief.md` (this
+  proposal's own phase-1 companions, full detail, line citations, and
+  the core-#75 slug correction there).
+- `km-adr-proposal/hooks/hooks.json`,
+  `km-adr-proposal/hooks/adr-shape-gate.sh`,
+  `km-adr-proposal/hooks/tests/adr-shape-gate.test.sh`.
+- `km-supersession/hooks/hooks.json`, `km-cross-index/hooks/hooks.json`
+  (Bash-matcher precedent).
+- `knowledge-management/hooks/hooks.json`, `README.md`,
+  `docs/specs/approvers.md`.
+- core commit `52bdc15` (PR #77, `tokenmaxxxer/tokenmaxxxer-core`):
+  `core/hooks/lib/gate-lib.sh`'s guarded-source usage contract,
+  `core/hooks/lib/gate-lib.py`'s `gate_bash_write_targets`,
+  `core/hooks/tests/compliance-check.sh`'s same-line-guard rule,
+  `core/hooks/tests/run-gate-lib-tests.sh`'s missing-core case group.
+- `docs/issue-10/proposals/knowledge-management/proposal.md` (this
+  repo's prior phase-1 proposal, PR #12 tone/structure precedent).
 
-## What will be done (phase 2, on Approve)
+## Proposed remediation detail (phase 2, on Approve)
 
-### 1. `km-adr-proposal/hooks/hooks.json` — register the dead matchers
+### 1 + 4. Register the full matcher for `km-adr-proposal`
 
-Change line 5 from:
-
-```
-        "matcher": "Write|Edit|MultiEdit",
-```
-
-to:
+`km-adr-proposal/hooks/hooks.json:5`: change
 
 ```
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+"matcher": "Write|Edit|MultiEdit"
 ```
 
-This is the fix for issue items 1 and 4: it makes both the
-already-implemented, already-tested `elif tool_name == "Bash":` branch
-(`adr-shape-gate.sh:111-126`) and the `NotebookEdit` handling folded
-into the `Write`/`Edit`/`MultiEdit` branch (line 85, tested at
-`adr-shape-gate.test.sh:307-320`) reachable in a real gated session,
-bringing matcher coverage and code coverage into agreement.
+to
 
-### 2. `km-adr-proposal/hooks/adr-shape-gate.sh` — two fixes in the same
-### file
+```
+"matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash"
+```
 
-- **Line 17** (source-guard, the defect survey.md found while verifying
-  item 5, using core #75's confirmed shape verbatim): change
+so every `tool_name` branch `adr-shape-gate.sh` already has code for
+and already has tests for (`Write`/`Edit`/`MultiEdit`/`NotebookEdit`
+via `gate_reconstruct_write`, `Bash` via the token-scan deny) is
+actually reachable in a live session. This is the single-line fix for
+item 1 and the `km-adr-proposal`-scoped instance of item 4; the
+identical defect on `km-cross-index/index-shape-gate.sh` (found in
+scouting) is recorded as a follow-up, not fixed in this diff (see
+Decision).
 
-  ```
-  . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
-  ```
+### 2. Delegate the Bash branch to `gate_bash_write_targets`
 
-  to
+`adr-shape-gate.sh:111-119` currently does:
 
-  ```
-  . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh" || { echo "adr-shape-gate.sh: cannot source gate-lib.sh" >&2; exit 2; }
-  ```
+```python
+elif tool_name == "Bash":
+    command = tool_input.get("command", "")
+    targets = gate_lib.__dict__  # no-op reference to keep import used
+    matched = False
+    for token in re.findall(r"[\w./~$-]+", command):
+        rel = gate_lib.gate_normalize_path(project_root, token)
+        if check_target(rel) is not None:
+            matched = True
+            break
+```
 
-  matching `gate-lib.sh`'s own usage-contract comment and satisfying
-  `compliance-check.sh`'s same-line detection rule.
+Since core #75 landed a Python port of `gate_bash_write_targets` in
+`core/hooks/lib/gate-lib.py` (mirroring the sh version's
+`[[:alnum:]_./~$-]+` class), the fix replaces the hand-rolled loop with
+a direct call into it:
 
-- **Lines 111-124** (issue item 2): replace the hand-rolled token scan
-  (`for token in re.findall(r"[\w./~$-]+", command):` plus the
-  `targets = gate_lib.__dict__  # no-op reference` line) with a direct
-  call into the ported core helper:
+```python
+elif tool_name == "Bash":
+    command = tool_input.get("command", "")
+    matched = False
+    for token in gate_lib.gate_bash_write_targets(command):
+        rel = gate_lib.gate_normalize_path(project_root, token)
+        if check_target(rel) is not None:
+            matched = True
+            break
+```
 
-  ```python
-  matched = False
-  for token in gate_lib.gate_bash_write_targets(command):
-      rel = gate_lib.gate_normalize_path(project_root, token)
-      if check_target(rel) is not None:
-          matched = True
-          break
-  ```
+removing both the duplicated regex and the no-op `gate_lib.__dict__`
+placeholder line, so the gate delegates to the one canonical
+implementation instead of maintaining a parallel one.
 
-  `gate_lib` is already imported at lines 47-49; no new import is
-  needed. `import re` must stay for `TARGET_RE`/`HEADING_RE` elsewhere
-  in the same payload.
+### 3. Fix the README dangler
 
-### 3. `km-adr-proposal/hooks/tests/adr-shape-gate.test.sh` —
-### missing-core test case (issue item 5)
-
-Add a test group mirroring core's own `run-gate-lib-tests.sh` group 7
-shape: invoke the gate with `CLAUDE_PLUGIN_ROOT_CORE` pointed at a
-nonexistent path (no `../../core` fallback resolvable from the
-`$TMPDIR`-based fixture) and assert `exit 2` (deny), not `exit 0`. This
-is the regression test for the guard added in fix 2 — without it, a
-future edit could silently drop the `||` guard again with nothing
-catching the regression.
-
-### 4. Top-level `README.md` — dangling reference (issue item 3)
-
-Line 27 currently reads:
+`README.md:27`: remove the trailing `(see below)` —
 
 ```
 - `docs/specs/approvers.md` — Approve-authority allowlist (see below)
 ```
 
-Per survey.md, `docs/specs/approvers.md` exists on disk but no later
-README section elaborates on it — the `(see below)` is a stale
-forward-reference with nothing to point to. Conservative fix: drop the
-dangling parenthetical:
+becomes
 
 ```
 - `docs/specs/approvers.md` — Approve-authority allowlist
 ```
 
-### 5. `knowledge-management/hooks/hooks.json` — ghost-file reference
-### (issue item 6)
+`docs/specs/approvers.md` already carries its own explanatory comment
+(read in full during the survey), so no replacement forward-reference
+is needed; the file is self-describing.
 
-The `PreToolUse`/`Bash` entry pointing at
-`${CLAUDE_PLUGIN_ROOT}/hooks/knowledge-management-progress-gate.sh` (a
-file confirmed absent from `knowledge-management/hooks/` — only
-`directive.sh` and `hooks.json` exist there) should be removed,
-consistent with the top-level README's own statement that
-"role-agnostic gates now fire from core's own `hooks.json`" for this
-file. Conservative fix: delete the `PreToolUse` block, leaving only the
-`SessionStart` entry that matches what actually exists. If a real
-progress gate is wanted later, it should be introduced with its script
-landing in the same commit, not referenced ahead of it.
+### 4 (continued). Fix the role-directive plugin's ghost-file reference
 
-## How you'll know it worked
+`knowledge-management/hooks/hooks.json:10-17` currently declares a
+`PreToolUse`/`Bash` entry pointing at
+`${CLAUDE_PLUGIN_ROOT}/hooks/knowledge-management-progress-gate.sh`,
+which does not exist on disk. `README.md:23` states this plugin's
+`hooks.json` now carries only `SessionStart` wiring since
+"role-agnostic gates now fire from core's own `hooks.json`." Proposed
+fix: remove the `PreToolUse` stanza from
+`knowledge-management/hooks/hooks.json` entirely, leaving only the
+`SessionStart` → `directive.sh` entry, bringing the file in line with
+what the README already claims about it. (Restoring the referenced
+script instead was considered and rejected: nothing in this repo's
+docs, tests, or the issue text describes what
+`knowledge-management-progress-gate.sh` was supposed to check, and
+inventing new gate behavior is out of scope for a residual-defect
+remediation issue.)
 
-- `km-adr-proposal/hooks/hooks.json`'s matcher includes `Bash` and
-  `NotebookEdit`, and `adr-shape-gate.test.sh`'s existing Bash/
-  NotebookEdit cases exercise a code path Claude Code would actually
-  invoke in a real session.
-- `adr-shape-gate.sh:111-124`'s Bash branch calls
-  `gate_lib.gate_bash_write_targets` instead of a local `re.findall`.
-- `adr-shape-gate.sh`'s `gate-lib.sh` source line carries the `||`
-  guard in core #75's exact confirmed shape.
-- A new missing-core test case asserts deny (exit 2) when
-  `CLAUDE_PLUGIN_ROOT_CORE` is unreachable; the full
-  `adr-shape-gate.test.sh` suite is green.
-- `core/hooks/tests/compliance-check.sh km-adr-proposal/hooks` passes
-  clean; the passing run is recorded (e.g. appended to a phase-2
-  implementation report) rather than only run ad hoc.
-- Top-level `README.md` no longer contains a dangling `(see below)`.
-- `knowledge-management/hooks/hooks.json` contains no reference to a
-  file that does not exist under `knowledge-management/hooks/`.
+### 5. Missing-core test case, source guard, full suite, compliance-check record
+
+Apply core #75's landed pattern verbatim to `adr-shape-gate.sh:17`:
+
+- Change the unguarded source line
+
+  ```
+  . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
+  ```
+
+  to the landed same-line-guard form:
+
+  ```
+  . "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh" || { echo "adr-shape-gate.sh: cannot source gate-lib.sh" >&2; exit 2; }
+  ```
+
+  (the exact idiom `core/hooks/lib/gate-lib.sh`'s own usage-contract
+  comment documents and `compliance-check.sh`'s landed same-line-guard
+  rule checks for — `gate-lib\.sh"$` with no trailing `||` on the same
+  line is a fail).
+- Add a "missing-core" test case group to `adr-shape-gate.test.sh`,
+  mirroring core's own `run-gate-lib-tests.sh` "group 7": invoke the
+  gate with `CLAUDE_PLUGIN_ROOT_CORE` pointed at a nonexistent
+  directory (e.g. `$TMP_ROOT/no-such-core`) and assert the gate denies
+  (exit 2) rather than silently no-op-passing.
+- Run `bash km-adr-proposal/hooks/tests/adr-shape-gate.test.sh` to
+  green (all existing + new cases) and
+  `core/hooks/tests/compliance-check.sh km-adr-proposal/hooks` (against
+  the landed core #75 checkout) to a clean pass, recording both
+  outputs verbatim in `docs/issue-13/reports/knowledge-management.md`
+  (the phase-2 record file, gated behind human APPROVE — not created
+  in this phase-1 proposal).
+
+### 6. Confirm zero leftover references after 3 and 4 land
+
+After items 3 and 4's diffs land, re-grep `README.md` and every
+`.claude-plugin/plugin.json` for `(see below)` and for
+`knowledge-management-progress-gate.sh` to confirm both are gone, and
+re-run the item-4 matcher/code table from survey.md against the
+post-fix files to confirm `km-adr-proposal` and the role-directive
+plugin now show zero gaps. Recorded in the phase-2 record file
+alongside the test/compliance-check output.
 
 ## Scope note
 
-Phase 1 only. No implementation lands in this PR; phase 2 (the five
-fixes above, the missing-core test, the compliance-check run and
-record) opens on Approve per contract v3 s19, matching the phase split
-`docs/issue-10/proposals/knowledge-management/proposal.md` already used
-for this role. The repo-wide follow-up named in Consequences (the other
-four gates' shared unguarded-source pattern, `km-cross-index`'s own
-dead Bash-branch on `index-shape-gate.sh`, and their unverified
-matcher/code/test coverage) is explicitly out of this proposal's scope
-and should be tracked as its own issue rather than folded into this
-one's phase-2.
+Phase 1 only. No implementation lands in this PR; phase 2 (the
+`hooks.json` matcher fix, the `gate_bash_write_targets` delegation,
+the README/hooks.json ghost-reference fixes, the missing-core test and
+source guard, the full-suite/compliance-check run and record) opens on
+Approve per contract v3 s19.
