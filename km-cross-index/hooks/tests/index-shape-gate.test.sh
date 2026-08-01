@@ -315,6 +315,11 @@ EOF
 )
 run_case "keyword/status only in prose (not header) fails" "fail" "$json_prose_only"
 
+# Missing-core fixture: CLAUDE_PLUGIN_ROOT_CORE points nowhere — the guarded
+# source line must deny (exit != 0), not silently no-op-pass.
+run_case "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" "fail" \
+  "$json_pass_header" "CLAUDE_PLUGIN_ROOT_CORE=$tmp_root/no-such-core"
+
 rm -rf "$tmp_root"
 
 echo "---"

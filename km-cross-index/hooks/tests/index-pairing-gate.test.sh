@@ -168,6 +168,15 @@ git -C "$repo12" add docs/patterns/entry-12.md
 out12="$(commit_json | KM_CROSS_INDEX_GATE_OFF="true" CLAUDE_PROJECT_DIR="$repo12" "$gate" 2>&1)"; rc12=$?
 record "recognized on-spelling disables gate" "pass" "$rc12" "$out12"
 
+# Case 13: FAIL - CLAUDE_PLUGIN_ROOT_CORE points nowhere; the guarded
+# source line must deny (exit != 0), not silently no-op-pass.
+repo13="$(make_repo)"
+cleanup_dirs+=("$repo13")
+printf 'New pattern entry body.\n' > "$repo13/docs/patterns/entry-13.md"
+git -C "$repo13" add docs/patterns/entry-13.md
+out13="$(commit_json | CLAUDE_PLUGIN_ROOT_CORE="$repo13/no-such-core" CLAUDE_PROJECT_DIR="$repo13" "$gate" 2>&1)"; rc13=$?
+record "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" "fail" "$rc13" "$out13"
+
 for d in "${cleanup_dirs[@]}"; do
   rm -rf "$d"
 done
