@@ -14,7 +14,7 @@
 # reconstruction are all delegated to the shared library instead of being
 # hand-rolled here.
 
-. "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh"
+. "${CLAUDE_PLUGIN_ROOT_CORE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../core" && pwd -P)}/hooks/lib/gate-lib.sh" || { echo "adr-shape-gate.sh: cannot source gate-lib.sh" >&2; exit 2; }
 gate_trap_fail_closed
 set -uo pipefail
 gate_kill_switch_active "${KM_ADR_PROPOSAL_GATE_OFF:-}" || { trap - EXIT; exit 0; }
@@ -110,9 +110,8 @@ if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
 
 elif tool_name == "Bash":
     command = tool_input.get("command", "")
-    targets = gate_lib.__dict__  # no-op reference to keep import used
     matched = False
-    for token in re.findall(r"[\w./~$-]+", command):
+    for token in gate_lib.gate_bash_write_targets(command):
         rel = gate_lib.gate_normalize_path(project_root, token)
         if check_target(rel) is not None:
             matched = True

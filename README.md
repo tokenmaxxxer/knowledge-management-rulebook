@@ -24,7 +24,7 @@ claude plugin install knowledge-management
 - `knowledge-management/hooks/directive.sh` — SessionStart role directive stub (sources `core/hooks/lib/role-directive.sh`)
 - `docs/handbooks/knowledge-management.md` — this role's write_scope and boundary-case doctrine
 - core `warrant` plugin — rotating-stance hunt agent (installed alongside this rulebook, per core issue #63)
-- `docs/specs/approvers.md` — Approve-authority allowlist (see below)
+- `docs/specs/approvers.md` — Approve-authority allowlist
 
 ### Enforcement plugins
 

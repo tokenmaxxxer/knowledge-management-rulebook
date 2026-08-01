@@ -422,6 +422,14 @@ PAYLOAD="$(json_write "$TARGET_REL" "$GOOD_BODY")"
 run_gate "$PAYLOAD"
 check "semantic-d pass: correctly structured document" 0 "$?"
 
+# ============================================================================
+# Missing-core fixture: CLAUDE_PLUGIN_ROOT_CORE points nowhere — the guarded
+# source line must deny (exit 2), not silently no-op-pass (issue-75/issue-13).
+# ============================================================================
+PAYLOAD="$(json_write "$TARGET_REL" "$GOOD_BODY")"
+run_gate "$PAYLOAD" CLAUDE_PLUGIN_ROOT_CORE="$TMP_ROOT/no-such-core"
+check "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" 2 "$?"
+
 echo ""
 echo "$PASS_COUNT/$((PASS_COUNT + FAIL_COUNT)) passed"
 
