@@ -245,6 +245,12 @@ SEMANTIC_D=$'---\ntitle: Some Pattern\nkeywords: [a]\nsource_issues: [7]\n---\n\
 run_case "FAIL: unrelated heading between two mandated headings violates adjacency" 2 \
   "$(json_write_payload docs/patterns/semantic-d.md "$SEMANTIC_D")"
 
+# ---- Missing-core fixture: CLAUDE_PLUGIN_ROOT_CORE points nowhere — the
+# guarded source line must deny (exit 2), not silently no-op-pass.
+run_case "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" 2 \
+  "$(json_write_payload docs/patterns/missing-core.md "$FULL_CONTENT")" \
+  "CLAUDE_PLUGIN_ROOT_CORE=$CLAUDE_PROJECT_DIR/no-such-core"
+
 echo "----"
 echo "SUMMARY: $pass_count passed, $fail_count failed"
 

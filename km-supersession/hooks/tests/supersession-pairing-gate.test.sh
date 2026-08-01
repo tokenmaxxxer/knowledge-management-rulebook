@@ -234,6 +234,18 @@ EOF
 git -C "$repo11" add "docs/patterns/my entry.md" docs/patterns/new.md
 run_gate "$repo11" 0 "case11: spaced staged-path recognized as one entry (reciprocal pairing passes)"
 
+# Case 12: FAIL - CLAUDE_PLUGIN_ROOT_CORE points nowhere; the guarded
+# source line must deny (exit 2), not silently no-op-pass.
+repo12="$(new_repo)"
+cat > "$repo12/docs/patterns/plain.md" <<'EOF'
+---
+title: Plain Pattern
+---
+Context...
+EOF
+git -C "$repo12" add docs/patterns/plain.md
+run_gate_env "$repo12" "CLAUDE_PLUGIN_ROOT_CORE=$repo12/no-such-core" 2 "case12: missing-core denies"
+
 echo "----"
 echo "summary: $pass_count passed, $fail_count failed"
 
