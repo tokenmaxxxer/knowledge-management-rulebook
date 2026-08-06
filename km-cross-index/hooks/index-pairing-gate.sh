@@ -59,24 +59,23 @@ else
 fi
 [ -n "$root" ] || gate_deny "index-pairing-gate" "could not resolve project root"
 
-status_file="$(mktemp)"
-only_file="$(mktemp)"
-trap_extra() { rm -f "$status_file" "$only_file"; }
+# NUL bytes cannot survive a bash command-substitution variable, so each
+# -z stream is piped straight into base64 (never captured raw) and only
+# the base64 text — NUL-free — is held in a variable; the python payload
+# below decodes and splits it directly.
+name_status_b64="$(git -C "$root" diff --cached -z --name-status 2>/dev/null | base64 | tr -d '\n')"; status_rc=${PIPESTATUS[0]}
+[ "$status_rc" = 0 ] || gate_deny "index-pairing-gate" "git diff --cached --name-status failed; cannot verify index pairing"
+name_only_b64="$(git -C "$root" diff --cached -z --name-only 2>/dev/null | base64 | tr -d '\n')"; only_rc=${PIPESTATUS[0]}
+[ "$only_rc" = 0 ] || gate_deny "index-pairing-gate" "git diff --cached --name-only failed; cannot verify index pairing"
 
-# NUL bytes cannot survive a bash command-substitution variable, so the
-# raw -z output is written straight to temp files rather than captured in
-# "$(...)"; the python payload below reads them directly.
-git -C "$root" diff --cached -z --name-status >"$status_file" 2>/dev/null || { trap_extra; gate_deny "index-pairing-gate" "git diff --cached --name-status failed; cannot verify index pairing"; }
-git -C "$root" diff --cached -z --name-only >"$only_file" 2>/dev/null || { trap_extra; gate_deny "index-pairing-gate" "git diff --cached --name-only failed; cannot verify index pairing"; }
-
-result="$(python3 -c '
+result="$(KM_PAIRING_STATUS_B64="$name_status_b64" KM_PAIRING_ONLY_B64="$name_only_b64" python3 <<'PYEOF'
+import base64
+import os
 import re
 import sys
 
-with open(sys.argv[1], "rb") as f:
-    name_status = f.read().decode()
-with open(sys.argv[2], "rb") as f:
-    name_only = f.read().decode()
+name_status = base64.b64decode(os.environ.get("KM_PAIRING_STATUS_B64", "")).decode()
+name_only = base64.b64decode(os.environ.get("KM_PAIRING_ONLY_B64", "")).decode()
 
 staged_names = [n for n in name_only.split("\x00") if n]
 
@@ -115,9 +114,8 @@ if "docs/patterns/index.md" in staged_names:
     sys.exit(0)
 
 print("DENY: new pattern entr" + ("y" if len(new_entries) == 1 else "ies") + " staged without updating docs/patterns/index.md in the same commit: " + ", ".join(new_entries))
-' "$status_file" "$only_file")"
-
-trap_extra
+PYEOF
+)"
 
 case "$result" in
   OK) gate_allow ;;
