@@ -22,8 +22,10 @@ else
 fi
 [ -n "$root" ] || deny "could not resolve project root"
 
-pyscript="$(mktemp "${TMPDIR:-/tmp}/km-cross-index-shape.XXXXXX.py")"
-cat > "$pyscript" <<'PYEOF'
+payload_b64="$(printf '%s' "$payload" | base64 | tr -d '\n')"
+
+result="$(KM_SHAPE_PAYLOAD_B64="$payload_b64" KM_SHAPE_ROOT="$root" GATE_LIB_PY="$GATE_LIB_PY" python3 <<'PYEOF'
+import base64
 import importlib.util
 import os
 import re
@@ -33,7 +35,7 @@ _spec = importlib.util.spec_from_file_location("gate_lib", os.environ["GATE_LIB_
 gate_lib = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gate_lib)
 
-root = sys.argv[1]
+root = os.environ["KM_SHAPE_ROOT"]
 
 
 def _deny(msg):
@@ -41,7 +43,7 @@ def _deny(msg):
     sys.exit(0)
 
 
-raw = sys.stdin.read()
+raw = base64.b64decode(os.environ.get("KM_SHAPE_PAYLOAD_B64", "")).decode("utf-8")
 payload = gate_lib.gate_parse_json_or_deny(raw, _deny)
 
 tool_name = payload.get("tool_name", "")
@@ -126,9 +128,7 @@ if missing:
 
 print("OK")
 PYEOF
-
-result="$(printf '%s' "$payload" | GATE_LIB_PY="$GATE_LIB_PY" python3 "$pyscript" "$root")"
-rm -f "$pyscript"
+)"
 
 case "$result" in
   OK) gate_allow ;;

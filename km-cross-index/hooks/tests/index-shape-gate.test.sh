@@ -320,6 +320,20 @@ run_case "keyword/status only in prose (not header) fails" "fail" "$json_prose_o
 run_case "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" "fail" \
   "$json_pass_header" "CLAUDE_PLUGIN_ROOT_CORE=$tmp_root/no-such-core"
 
+# mktemp shadowed on PATH with an always-failing marker binary must not
+# affect the gate (issue #19 regression: the gate's runtime path must not
+# call mktemp at all).
+fake_bin="$(mktemp -d)"
+cat > "$fake_bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+echo "mktemp: shadowed for regression test, always fails" >&2
+exit 1
+EOF
+chmod +x "$fake_bin/mktemp"
+run_case "mktemp shadowed on PATH does not block a valid write" "pass" \
+  "$json_pass_header" "PATH=$fake_bin:$PATH"
+rm -rf "$fake_bin"
+
 rm -rf "$tmp_root"
 
 echo "---"

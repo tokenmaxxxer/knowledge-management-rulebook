@@ -177,6 +177,26 @@ git -C "$repo13" add docs/patterns/entry-13.md
 out13="$(commit_json | CLAUDE_PLUGIN_ROOT_CORE="$repo13/no-such-core" CLAUDE_PROJECT_DIR="$repo13" "$gate" 2>&1)"; rc13=$?
 record "missing-core: CLAUDE_PLUGIN_ROOT_CORE pointed nowhere denies" "fail" "$rc13" "$out13"
 
+# Case 14: PASS - mktemp shadowed on PATH with an always-failing marker
+# binary must not affect the gate (issue #19 regression: the gate's
+# runtime path must not call mktemp at all).
+fake_bin="$(mktemp -d)"
+cleanup_dirs+=("$fake_bin")
+cat > "$fake_bin/mktemp" <<'EOF'
+#!/usr/bin/env bash
+echo "mktemp: shadowed for regression test, always fails" >&2
+exit 1
+EOF
+chmod +x "$fake_bin/mktemp"
+repo14="$(make_repo)"
+cleanup_dirs+=("$repo14")
+printf 'New pattern entry body.\n' > "$repo14/docs/patterns/entry-14.md"
+git -C "$repo14" add docs/patterns/entry-14.md
+printf '# Pattern Index\n\n| Keyword | Status |\n| --- | --- |\n| entry-14 | active |\n' > "$repo14/docs/patterns/index.md"
+git -C "$repo14" add docs/patterns/index.md
+out14="$(commit_json | PATH="$fake_bin:$PATH" CLAUDE_PROJECT_DIR="$repo14" "$gate" 2>&1)"; rc14=$?
+record "mktemp shadowed on PATH does not block a valid pairing" "pass" "$rc14" "$out14"
+
 for d in "${cleanup_dirs[@]}"; do
   rm -rf "$d"
 done
