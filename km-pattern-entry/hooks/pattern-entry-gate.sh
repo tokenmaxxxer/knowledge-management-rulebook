@@ -105,10 +105,32 @@ if front_matter is None:
     missing.append("YAML front matter (leading '---' ... closing '---' block)")
 else:
     fm_lines = front_matter.splitlines()
-    for key in ("title", "keywords", "source_issues"):
+    for key in ("title", "keywords", "source_issues", "article_id", "capture_point", "reuse_status"):
         key_re = re.compile(r"^" + re.escape(key) + r":")
         if not any(key_re.match(line) for line in fm_lines):
             missing.append(f"front-matter key '{key}:'")
+
+    def fm_value(key):
+        key_re = re.compile(r"^" + re.escape(key) + r":\s*(.*)$")
+        for line in fm_lines:
+            m = key_re.match(line)
+            if m:
+                return m.group(1).strip().strip("'\"")
+        return None
+
+    capture_point = fm_value("capture_point")
+    if capture_point is not None and capture_point not in ("at-resolution", "retroactive"):
+        missing.append(
+            f"front-matter key 'capture_point:' has invalid value '{capture_point}' "
+            "(must be 'at-resolution' or 'retroactive')"
+        )
+
+    reuse_status = fm_value("reuse_status")
+    if reuse_status is not None and reuse_status not in ("new", "reused", "flagged-for-review"):
+        missing.append(
+            f"front-matter key 'reuse_status:' has invalid value '{reuse_status}' "
+            "(must be 'new', 'reused', or 'flagged-for-review')"
+        )
 
 # --- Heading order + adjacency check ---
 # Heading-line-scoped scan: only lines that are actually markdown headings
