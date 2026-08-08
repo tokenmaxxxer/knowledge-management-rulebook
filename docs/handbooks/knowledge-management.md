@@ -43,7 +43,14 @@ repo facts; unsourced claims labeled `assumption`).
 ### 1. Pattern-library entry — `docs/patterns/<slug>.md`
 
 Front matter: `title`, `keywords`, `source_issues` (issue numbers this
-pattern was extracted from), `supersedes` / `superseded_by` (if applicable).
+pattern was extracted from), `supersedes` / `superseded_by` (if applicable),
+plus the marketplace `knowledge-management.spec.json` required fields
+(issue-21): `article_id` (ref — this entry's own resolvable identifier,
+e.g. its own path), `capture_point` (enum `at-resolution` | `retroactive`),
+`reuse_status` (enum `new` | `reused` | `flagged-for-review`). The spec's
+fourth required field, `article_content`, maps to this entry's own body
+below — the five sections ARE the article content; no separate field or
+section is added for it.
 
 Body sections, in order:
 1. **Context** — situation the pattern appears in
@@ -65,17 +72,38 @@ change — old entry's front matter gets `superseded_by: <new path>`, new
 entry's front matter gets `supersedes: <old path>`. Linking only one side is
 incomplete.
 
+## loop_state vocabulary (issue-21)
+
+This role's `loop_state` values are fixed to the marketplace
+`knowledge-management.spec.json` set, superseding the prior ad hoc set
+(`proposed`/`open`/`phase-1`/`delivered`/`landed`) per issue-2's deferred
+decision to adopt a realized spec's vocabulary when one surfaced:
+
+- `capturing` — progress: a pattern entry is being drafted/captured.
+- `landed` — terminal: the pattern entry and its index/supersession pairing
+  are complete and merged.
+- `not-captured-at-resolution` — refusal: used when a pattern entry's
+  `capture_point` is `retroactive` (see the manual self-check item below).
+- `article-unreachable` — error: used when a pattern entry's `article_id`
+  fails to resolve to a real file.
+
 ## Phase-2 record self-check
 
 Before closing the phase-2 record (`docs/issue-<n>/reports/knowledge-management.md`),
 the "what-was-done" section must confirm: every pattern entry added or
-changed this round has all required front-matter fields and all five body
-sections above, and any supersession is linked on both sides. Core's
-`record-fields-gate.sh` already enforces the general §20 fields; as of
-issue-7 the three phase-2 shape/pairing checks are also machine-enforced at
-write- and commit-time by the `km-pattern-entry` / `km-cross-index` /
-`km-supersession` plugins (composition table above) — this self-check
-remains the closing confirmation, not the sole enforcement.
+changed this round has all required front-matter fields (including the
+issue-21 spec fields above) and all five body sections above, and any
+supersession is linked on both sides. Core's `record-fields-gate.sh`
+already enforces the general §20 fields; as of issue-7 the three phase-2
+shape/pairing checks are also machine-enforced at write- and commit-time by
+the `km-pattern-entry` / `km-cross-index` / `km-supersession` plugins
+(composition table above) — this self-check remains the closing
+confirmation, not the sole enforcement.
+
+Additional manual self-check item (issue-21, no automated gate cross-checks
+this pairing — see the phase-1 proposal's Constraints): if any pattern
+entry touched this round has `capture_point: retroactive`, confirm this
+record's `loop_state` is set to `not-captured-at-resolution`, not `landed`.
 
 BOUNDARY CASE: if the work in front of you drifts outside `decides` above,
 stop and hand off per the arrow — do not silently absorb another role's

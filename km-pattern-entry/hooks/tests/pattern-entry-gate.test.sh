@@ -40,11 +40,21 @@ run_case() {
   rm -f "$out_file"
 }
 
-FULL_CONTENT=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+FULL_CONTENT=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: at-resolution\nreuse_status: new\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
 
-MISSING_KEYWORDS=$'---\ntitle: Some Pattern\nsource_issues: [7]\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+MISSING_KEYWORDS=$'---\ntitle: Some Pattern\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: at-resolution\nreuse_status: new\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
 
-ORDER_VIOLATION=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\n---\n\n## Context\ntext\n\n## Solution\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Consequences\ntext\n'
+ORDER_VIOLATION=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: at-resolution\nreuse_status: new\n---\n\n## Context\ntext\n\n## Solution\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Consequences\ntext\n'
+
+MISSING_ARTICLE_ID=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\ncapture_point: at-resolution\nreuse_status: new\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+
+MISSING_CAPTURE_POINT=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\nreuse_status: new\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+
+MISSING_REUSE_STATUS=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: at-resolution\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+
+INVALID_CAPTURE_POINT=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: sometime\nreuse_status: new\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+
+INVALID_REUSE_STATUS=$'---\ntitle: Some Pattern\nkeywords: [a, b]\nsource_issues: [7]\narticle_id: docs/patterns/some-pattern.md\ncapture_point: retroactive\nreuse_status: maybe\n---\n\n## Context\ntext\n\n## Problem\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
 
 json_write_payload() {
   local path="$1"
@@ -129,6 +139,25 @@ run_case "FAIL: missing keywords in front matter" 2 \
 run_case "FAIL: Solution heading before Problem heading" 2 \
   "$(json_write_payload docs/patterns/some-pattern.md "$ORDER_VIOLATION")"
 
+# ---- issue-21: spec-required front-matter keys ----
+run_case "FAIL: missing article_id in front matter" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$MISSING_ARTICLE_ID")"
+
+run_case "FAIL: missing capture_point in front matter" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$MISSING_CAPTURE_POINT")"
+
+run_case "FAIL: missing reuse_status in front matter" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$MISSING_REUSE_STATUS")"
+
+run_case "FAIL: invalid capture_point enum value" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$INVALID_CAPTURE_POINT")"
+
+run_case "FAIL: invalid reuse_status enum value" 2 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$INVALID_REUSE_STATUS")"
+
+run_case "PASS: full pattern entry with all six front-matter keys and valid enums" 0 \
+  "$(json_write_payload docs/patterns/some-pattern.md "$FULL_CONTENT")"
+
 # Case 4a: PASS path is docs/patterns/index.md (sibling plugin's business)
 run_case "PASS: docs/patterns/index.md excluded (km-cross-index territory)" 0 \
   "$(json_write_payload docs/patterns/index.md "$MISSING_KEYWORDS")"
@@ -154,7 +183,7 @@ run_case "FAIL: malformed JSON on stdin fails closed" 2 \
 # first-occurrence-only) only the harmless body occurrence would be
 # replaced and the heading would stay wrong, so this must PASS.
 write_fixture "docs/patterns/replace-all-edit.md" \
-  $'---\ntitle: T\nkeywords: k\nsource_issues: [7]\n---\n\n## Context\nThis is PLACEHOLDER prose, harmless.\n\n## PLACEHOLDER\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
+  $'---\ntitle: T\nkeywords: k\nsource_issues: [7]\narticle_id: docs/patterns/replace-all-edit.md\ncapture_point: at-resolution\nreuse_status: new\n---\n\n## Context\nThis is PLACEHOLDER prose, harmless.\n\n## PLACEHOLDER\ntext\n\n## Why\ntext\n\n## Solution\ntext\n\n## Consequences\ntext\n'
 run_case "PASS: Edit replace_all:true replaces ALL occurrences of old_string" 0 \
   "$(json_edit_payload docs/patterns/replace-all-edit.md PLACEHOLDER Problem true)"
 
