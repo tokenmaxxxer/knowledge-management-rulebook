@@ -31,7 +31,14 @@ propose the mapping; apply it in phase 2 after approval.
   shape are this rulebook's concern.
 - `capture_point: retroactive` must surface as a refusal `loop_state`
   (`not-captured-at-resolution`), never a silent pass — per the spec's
-  own `recomputation` rule.
+  own `recomputation` rule. No gate in this repo cross-checks a pattern
+  entry's `capture_point` against its record's `loop_state` (confirmed by
+  phase-1 warrant hunt, `docs/reports/2026-08-09-hunt-issue-21-implementation.md`) —
+  this constraint is enforced as a **manual self-check** in the handbook's
+  existing phase-2 record self-check, the same enforcement tier as the
+  role's other cross-artifact checks (e.g. bidirectional supersession
+  linking), not a new automated gate. Automating the cross-file check is
+  future scope, matching the spec's own `recomputation.checked_by: TBD`.
 - `RECORD_FIELDS_TERMINAL_STATES` stays unset: the spec's terminal set
   (`{landed}`) already equals core's default: no env override needed.
 
@@ -87,6 +94,10 @@ set, is simpler and matches the spec exactly.
     entry's `article_id` fails to resolve) and state this is now the
     role's fixed vocabulary, superseding the prior ad hoc set per
     issue-2's deferred decision.
+  - Add the manual self-check item: when closing a phase-2 record,
+    confirm any pattern entry with `capture_point: retroactive` has its
+    record's `loop_state` set to `not-captured-at-resolution` (no
+    automated gate checks this cross-file pairing — see Constraints).
 - `km-pattern-entry/hooks/pattern-entry-gate.sh`: extend the front-matter
   key check from `("title", "keywords", "source_issues")` to also
   require `article_id`, `capture_point`, `reuse_status`; add enum-value
