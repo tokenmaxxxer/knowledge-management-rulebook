@@ -4,6 +4,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$SCRIPT_DIR/../adr-shape-gate.sh"
 
+# Test-env resolution convention (docs/specs/test-env-resolution.md, issue #551).
+. "$SCRIPT_DIR/../../../knowledge-management/hooks/tests/lib/test-env-resolve.sh"
+resolve_core_or_skip "$SCRIPT_DIR/../../../core"
+
 TMP_ROOT="$(mktemp -d)"
 cleanup() { rm -rf "$TMP_ROOT"; }
 trap cleanup EXIT

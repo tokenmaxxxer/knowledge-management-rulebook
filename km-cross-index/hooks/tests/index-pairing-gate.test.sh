@@ -4,6 +4,10 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 gate="$here/../index-pairing-gate.sh"
 
+# Test-env resolution convention (docs/specs/test-env-resolution.md, issue #551).
+. "$here/../../../knowledge-management/hooks/tests/lib/test-env-resolve.sh"
+resolve_core_or_skip "$here/../../../core"
+
 pass_count=0
 fail_count=0
 

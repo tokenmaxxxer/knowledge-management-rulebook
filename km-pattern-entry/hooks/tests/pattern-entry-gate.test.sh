@@ -4,6 +4,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 GATE="$SCRIPT_DIR/../pattern-entry-gate.sh"
 
+# Test-env resolution convention (docs/specs/test-env-resolution.md, issue #551).
+. "$SCRIPT_DIR/../../../knowledge-management/hooks/tests/lib/test-env-resolve.sh"
+resolve_core_or_skip "$SCRIPT_DIR/../../../core"
+
 export CLAUDE_PLUGIN_ROOT="$SCRIPT_DIR/.."
 export CLAUDE_PROJECT_DIR
 CLAUDE_PROJECT_DIR="$(mktemp -d)"
