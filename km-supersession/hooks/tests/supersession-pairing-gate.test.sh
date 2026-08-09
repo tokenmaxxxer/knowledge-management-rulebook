@@ -4,6 +4,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE="$SCRIPT_DIR/../supersession-pairing-gate.sh"
 
+# Test-env resolution convention (docs/specs/test-env-resolution.md, issue #551).
+. "$SCRIPT_DIR/../../../knowledge-management/hooks/tests/lib/test-env-resolve.sh"
+resolve_core_or_skip "$SCRIPT_DIR/../../../core"
+
 pass_count=0
 fail_count=0
 tmp_dirs=()
