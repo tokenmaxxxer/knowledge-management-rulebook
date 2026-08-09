@@ -1,9 +1,15 @@
 ---
-code_under_review: PENDING_COMMIT
+code_under_review:
+  - knowledge-management/hooks/tests/lib/test-env-resolve.sh
+  - km-adr-proposal/hooks/tests/adr-shape-gate.test.sh
+  - km-cross-index/hooks/tests/index-shape-gate.test.sh
+  - km-cross-index/hooks/tests/index-pairing-gate.test.sh
+  - km-pattern-entry/hooks/tests/pattern-entry-gate.test.sh
+  - km-supersession/hooks/tests/supersession-pairing-gate.test.sh
 type: fix
 breaking: false
 verdict: pass
-loop_state: committing
+loop_state: landed
 ---
 
 # Implementation record — issue #24
