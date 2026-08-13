@@ -40,17 +40,28 @@ repo facts; unsourced claims labeled `assumption`).
 
 ## Phase-2 artifact templates
 
-### 1. Pattern-library entry — `docs/patterns/<slug>.md`
+### 1. Pattern-library entry — `docs/patterns/<domain>.<slug>.md`
+
+The filename carries a required `<domain>` prefix drawn from a short fixed
+list (`process`, `tooling`, `review`, `record`, `handoff` — extend the list
+only by phase-1 proposal, never ad hoc), then `.<slug>`. The prefix makes
+the pattern library filterable by domain without opening files, the same
+way the index's table (below) makes it filterable by keyword.
 
 Front matter: `title`, `keywords`, `source_issues` (issue numbers this
-pattern was extracted from), `supersedes` / `superseded_by` (if applicable),
-plus the marketplace `knowledge-management.spec.json` required fields
-(issue-21): `article_id` (ref — this entry's own resolvable identifier,
-e.g. its own path), `capture_point` (enum `at-resolution` | `retroactive`),
-`reuse_status` (enum `new` | `reused` | `flagged-for-review`). The spec's
-fourth required field, `article_content`, maps to this entry's own body
-below — the five sections ARE the article content; no separate field or
-section is added for it.
+pattern was extracted from), `reused_by` (issue numbers of LATER issues
+that consulted or applied this entry — appended whenever a later phase-1
+research pass cites an existing entry as upstream basis; starts empty),
+`applies_to_roles` (role names other than this entry's own role that the
+pattern is relevant to, so another role's phase-1 research can discover it
+without a manual search; may be empty), `supersedes` / `superseded_by` (if
+applicable), plus the marketplace `knowledge-management.spec.json` required
+fields (issue-21): `article_id` (ref — this entry's own resolvable
+identifier, e.g. its own path), `capture_point` (enum `at-resolution` |
+`retroactive`), `reuse_status` (enum `new` | `reused` | `flagged-for-
+review`). The spec's fourth required field, `article_content`, maps to
+this entry's own body below — the five sections ARE the article content;
+no separate field or section is added for it.
 
 Body sections, in order:
 1. **Context** — situation the pattern appears in
@@ -59,11 +70,23 @@ Body sections, in order:
 4. **Solution** — the reusable fix
 5. **Consequences** — trade-offs of applying it
 
+Once an entry's `loop_state` reaches `landed`, its five body sections and
+`title` are immutable — a later change to the pattern is a NEW entry that
+supersedes this one (§3 below), never an in-place edit. Only `reused_by`
+may still be appended after landing, since accumulating later citations is
+not a change to the pattern itself.
+
 ### 2. Cross-issue index — `docs/patterns/index.md`
 
-One table row per pattern entry: pattern name, keywords, source_issues,
-status (active/superseded). Adding an entry requires adding its row here in
-the same change.
+Two required tables, both updated in the same change that adds or changes
+an entry:
+- **By issue** (primary): one row per pattern entry — pattern name,
+  keywords, source_issues, reused_by, status (active/superseded).
+- **By keyword** (secondary): one row per distinct keyword appearing in
+  any entry's `keywords` field, listing the pattern names that carry it —
+  the second retrieval axis onto the same rows, not a second copy of the
+  data. Regenerate this table's rows from the entries' `keywords` fields;
+  never hand-maintain it as an independent list.
 
 ### 3. Supersession note
 
@@ -92,8 +115,11 @@ decision to adopt a realized spec's vocabulary when one surfaced:
 Before closing the phase-2 record (`docs/issue-<n>/reports/knowledge-management.md`),
 the "what-was-done" section must confirm: every pattern entry added or
 changed this round has all required front-matter fields (including the
-issue-21 spec fields above) and all five body sections above, and any
-supersession is linked on both sides. Core's `record-fields-gate.sh`
+issue-21 spec fields and the `reused_by`/`applies_to_roles` fields above)
+and all five body sections above, its filename carries a valid `<domain>`
+prefix, any supersession is linked on both sides, and no `landed` entry's
+body or title was edited in place rather than superseded. Core's
+`record-fields-gate.sh`
 already enforces the general §20 fields; as of issue-7 the three phase-2
 shape/pairing checks are also machine-enforced at write- and commit-time by
 the `km-pattern-entry` / `km-cross-index` / `km-supersession` plugins
