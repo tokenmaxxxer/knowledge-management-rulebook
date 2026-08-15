@@ -20,10 +20,10 @@ self-contained plugin (directive/gate/test), registered in
 plugin. Which plugins compose a given phase's norm is itself the design, per
 `docs/issue-7/proposals/knowledge-management/proposal.md`:
 
-| Phase norm | Composed of | Relation |
-|---|---|---|
-| Phase-1 norm | `km-adr-proposal` | sole member — a single-plugin norm |
-| Phase-2 norm | `km-pattern-entry` ∧ `km-cross-index` ∧ `km-supersession` | jointly necessary, all three enabled together; none alone enforces the full norm |
+| Phase norm | Composed of | Relation | Lifecycle label |
+|---|---|---|---|
+| Phase-1 norm | `km-adr-proposal` | sole member — a single-plugin norm | bootstrap (proposal-time only) |
+| Phase-2 norm | `km-pattern-entry` ∧ `km-cross-index` ∧ `km-supersession` | jointly necessary, all three enabled together; none alone enforces the full norm | ongoing (fires on every pattern-entry write, not just bootstrap) |
 
 Each plugin owns exactly one methodology, has its own kill switch
 (`KM_ADR_PROPOSAL_GATE_OFF`, `KM_PATTERN_ENTRY_GATE_OFF`,
@@ -130,6 +130,38 @@ Additional manual self-check item (issue-21, no automated gate cross-checks
 this pairing — see the phase-1 proposal's Constraints): if any pattern
 entry touched this round has `capture_point: retroactive`, confirm this
 record's `loop_state` is set to `not-captured-at-resolution`, not `landed`.
+
+Additional manual self-check items (issue-1199, 2026-08-14 amendment):
+- Any pattern entry named as upstream basis by a LATER issue's phase-1
+  research must have that later issue number appended to its
+  `reused_by` field in the same change that cites it — do not defer the
+  append past the citing round.
+- The two supersession-link edits (`superseded_by` on the old entry,
+  `supersedes` on the new one) are checked as ONE paired item, not two
+  independently satisfiable ones — a change landing only one side fails
+  this item even if every other field is present.
+
+## Claude Code plugin/skill tool learnings (issue-1199, 2026-08-14 amendment)
+
+Three design moves drawn from the current Claude Code plugin/skill
+landscape, additive to the tool learnings above (issue-1199,
+2026-08-13); adoption evidence and per-tool detail live in this issue's
+own records, not here.
+
+1. **Automatic citation-at-use-point.** A knowledge-capture pipeline that
+   extracts articles from raw session content at a fixed trigger point,
+   rather than leaving capture to a remembered manual step, motivates
+   this handbook's `reused_by`-at-citation-time self-check item above:
+   citation is recorded the moment it happens, not left for a
+   retrospective sweep.
+2. **Paired lifecycle actions over independent steps.** An ADR-lifecycle
+   design that performs create, index-update, and supersede-link as one
+   action — never three separately satisfiable ones — motivates this
+   handbook's paired supersession-link self-check item above.
+3. **Explicit lifecycle-phase labeling.** A skills marketplace that tags
+   each skill by lifecycle phase (bootstrap vs. ongoing) rather than
+   listing them undifferentiated motivates the "Lifecycle label" column
+   added to the enforcement plugin composition table above.
 
 BOUNDARY CASE: if the work in front of you drifts outside `decides` above,
 stop and hand off per the arrow — do not silently absorb another role's
